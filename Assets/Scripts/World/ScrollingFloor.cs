@@ -3,10 +3,10 @@ using UnityEngine;
 namespace JellyRush.World
 {
     /// <summary>
-    /// PLACEHOLDER depth cue: a long static floor whose grid texture scrolls toward
-    /// the camera at the world speed. Gives an endless "moving through a corridor"
-    /// feeling (CAMERA_AND_DEPTH_SPEC section 7) without spawning/recycling geometry.
-    /// Swap for real Toy-Workshop floor art later.
+    /// Scrolls a texture toward the camera at the world speed. NOT used since round 4
+    /// (the play space has no floor plane - space below the platforms is empty).
+    /// Kept as a ready-made helper for a future far BACKGROUND layer / parallax,
+    /// which is allowed to move but must never sit under the player.
     /// </summary>
     public class ScrollingFloor : MonoBehaviour
     {

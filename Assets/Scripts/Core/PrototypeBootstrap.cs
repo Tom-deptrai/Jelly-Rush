@@ -59,10 +59,12 @@ namespace JellyRush.Core
             var scroller = new GameObject("WorldScroller").AddComponent<WorldScroller>();
             scroller.Configure(_config, game, worldRoot);
 
-            BuildAbyss(scroller, theme);
-            BuildLaneRails();
+            // Round 4: no floor plane, no lane rails. Space below the platforms is
+            // genuinely empty - a missed jump falls away into the depth. Depth is
+            // carried only by the sky colour + light distance fog and by the
+            // platforms / coins / obstacles receding via perspective.
 
-            // --- lanes + height tiers --------------------------------------
+            // --- lanes + height tiers (LOGIC ONLY - nothing drawn) ---------
             var lanes = new GameObject("LaneSystem").AddComponent<LaneSystem>();
             lanes.Configure(_config.laneSpacing);
             var heights = new GameObject("HeightGrid").AddComponent<HeightGrid>();
@@ -84,6 +86,8 @@ namespace JellyRush.Core
             camGo.AddComponent<AudioListener>();
             var rig = camGo.AddComponent<DepthCameraRig>();
             rig.Configure(_config, player.transform, theme.skyColor);
+
+            BuildAtmosphere(theme);
 
             // --- spawner (segment streamer) -------------------------------
             var spawner = new GameObject("Spawner").AddComponent<Spawner>();
@@ -113,50 +117,15 @@ namespace JellyRush.Core
             RenderSettings.ambientLight = new Color(0.55f, 0.58f, 0.65f);
         }
 
-        void BuildAbyss(WorldScroller scroller, JellyRush.World.WorldThemeData theme)
+        void BuildAtmosphere(JellyRush.World.WorldThemeData theme)
         {
-            // NO continuous ground. This plane sits far BELOW the relative fail
-            // distance, purely as a distant moving backdrop so a fall reads and
-            // depth still has motion. It has no collider - it can never be landed on.
-            var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            floor.name = "AbyssBackdrop";
-            floor.transform.localScale = new Vector3(3f, 1f, 45f);
-            float y = _config.startHeight - _config.failDropBelowSupport - 8f;
-            floor.transform.position = new Vector3(0f, y, _config.playerZ + 210f);
-            var rend = floor.GetComponent<Renderer>();
-            var shader = Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit");
-            var mat = new Material(shader);
-            Color deep = Color.Lerp(theme.skyColor, Color.black, 0.6f);
-            var tex = ScrollingFloor.BuildGrid(128, deep, Color.Lerp(deep, Color.black, 0.4f));
-            mat.mainTexture = tex;
-            mat.mainTextureScale = new Vector2(4f, 150f);
-            rend.material = mat;
-            rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            floor.GetComponent<Collider>().enabled = false;
-            floor.AddComponent<ScrollingFloor>().Configure(scroller);
-        }
-
-        void BuildLaneRails()
-        {
-            // Faint static rails: the 3 lanes read as converging lines via perspective
-            // (CAMERA_AND_DEPTH_SPEC section 4) without drawn lane stripes on the HUD.
-            var railMat = new Material(Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit"))
-            {
-                color = new Color(1f, 1f, 1f, 0.14f)
-            };
-            for (int lane = 0; lane < LaneSystem.LaneCount; lane++)
-            {
-                float x = (lane - 1) * _config.laneSpacing;
-                var rail = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                rail.name = $"LaneRail_{lane}";
-                rail.transform.localScale = new Vector3(0.06f, 0.02f, 420f);
-                rail.transform.position = new Vector3(x, _config.startHeight - 0.34f, _config.playerZ + 200f);
-                var rr = rail.GetComponent<Renderer>();
-                rr.sharedMaterial = railMat;
-                rr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                rr.receiveShadows = false;
-                Object.Destroy(rail.GetComponent<Collider>());
-            }
+            // The only depth aids now: sky colour + gentle linear fog so far
+            // platforms fade into the sky. No geometry below the play space.
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.Linear;
+            RenderSettings.fogColor = theme.skyColor;
+            RenderSettings.fogStartDistance = Mathf.Max(10f, _config.spawnAheadDistance * 0.55f);
+            RenderSettings.fogEndDistance = _config.spawnAheadDistance + 35f;
         }
 
         PlayerController BuildPlayer(out PlayerVisuals visuals, out PlayerCollisions collisions)
