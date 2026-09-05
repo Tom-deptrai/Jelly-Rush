@@ -1,6 +1,7 @@
 using JellyRush.Core;
 using JellyRush.InputSystem;
 using JellyRush.Lanes;
+using JellyRush.Spawnables;
 using UnityEngine;
 
 namespace JellyRush.Player
@@ -8,17 +9,19 @@ namespace JellyRush.Player
     /// <summary>
     /// The player "unit" = Jelly + carrier treated as one thing (GAMEPLAY_SPEC 3).
     ///
-    /// Jump model is velocity + gravity (not a fixed-length arc), so every valid
-    /// Tap can start a NEW jump beat immediately - even mid-air - by re-launching
-    /// from the current height. No queue, no minimum interval between taps: the
-    /// faster the player taps, the more continuous the jump chain
-    /// (GAMEPLAY_SPEC 1 & 4). Y stays continuous (only vertical velocity changes),
-    /// so there is no teleport and no positional snap.
+    /// Jump = velocity + gravity. Every valid Tap fires a NEW beat immediately
+    /// (grounded or mid-air) by re-setting vertical velocity from the current
+    /// height, so Y stays continuous - no teleport, no queue. Swipe L/R changes
+    /// lane AND fires a beat.
     ///
-    /// Lane sliding is a smooth SmoothDamp toward the target lane X and is fully
-    /// independent of the jump, so a swipe changes lane AND fires a jump beat at
-    /// once, on the ground or in the air. Rendering / squash-stretch reactions
-    /// live in <see cref="PlayerVisuals"/>.
+    /// Round 2 rules:
+    ///  - At most <see cref="PrototypeConfig.maxAirJumpBeats"/> (4) consecutive
+    ///    beats between two successful landings. Each Tap / lane-swipe beat spends
+    ///    one; when they run out, further Tap/Swipe still changes lane but no
+    ///    longer produces a jump. Landing on a platform refills them.
+    ///  - There is no ground. A downward raycast finds the platform under the
+    ///    pair; landing on its top (while falling) refills beats. Falling past
+    ///    <see cref="PrototypeConfig.failY"/> is Game Over.
     /// </summary>
     public class PlayerController : MonoBehaviour
     {
@@ -29,18 +32,19 @@ namespace JellyRush.Player
         PlayerVisuals _visuals;
 
         int _currentLane = LaneSystem.Center;
-        float _laneX;               // current interpolated X
-        float _laneXVel;            // SmoothDamp velocity
+        float _laneX;
+        float _laneXVel;
         int _targetLane = LaneSystem.Center;
 
-        float _y;                   // current height above the lane floor
-        float _vy;                  // vertical velocity
+        float _y;
+        float _vy;
         bool _airborne;
+        int _beatsLeft;
 
         public int CurrentLane => _currentLane;
         public bool IsAirborne => _airborne;
+        public int BeatsLeft => _beatsLeft;
 
-        /// <summary>Gravity from the "reference" jump: apex = jumpHeight at jumpDuration/2. g = 8h / T^2.</summary>
         float Gravity
         {
             get
@@ -50,7 +54,6 @@ namespace JellyRush.Player
             }
         }
 
-        /// <summary>Take-off velocity for a reference-height hop. v0 = g * T / 2.</summary>
         float LaunchVelocity => Gravity * Mathf.Max(0.05f, _cfg.jumpDuration) * 0.5f;
 
         public void Configure(PrototypeConfig cfg, LaneSystem lanes, GameManager game,
@@ -64,8 +67,10 @@ namespace JellyRush.Player
 
             _lanes.Configure(cfg.laneSpacing);
             _laneX = _lanes.LaneToX(_currentLane);
-            _y = _cfg.groundY;
+            _y = 0f;
             _vy = 0f;
+            _airborne = false;
+            _beatsLeft = Mathf.Max(1, cfg.maxAirJumpBeats);
             ApplyPosition();
 
             _input.Gesture += OnGesture;
@@ -86,29 +91,31 @@ namespace JellyRush.Player
                 case GestureType.SwipeLeft:
                     _targetLane = _lanes.Step(_targetLane, -1);
                     _visuals?.OnLaneChange(-1);
-                    Beat(1f);                 // lane change also fires a jump beat now
+                    TryBeat(1f, gated: true);          // lane still changes even if no beat left
                     break;
                 case GestureType.SwipeRight:
                     _targetLane = _lanes.Step(_targetLane, +1);
                     _visuals?.OnLaneChange(+1);
-                    Beat(1f);
+                    TryBeat(1f, gated: true);
                     break;
                 case GestureType.Tap:
-                    Beat(1f);
+                    TryBeat(1f, gated: true);
                     break;
             }
         }
 
         /// <summary>
-        /// Start a new jump beat right now. Works whether grounded or airborne - it
-        /// (re)sets the upward velocity from the current height, so Y stays
-        /// continuous (no teleport). This is the whole "rapid tap = continuous
-        /// chain". A normal mid-air beat is scaled down as the pair nears
-        /// <see cref="PrototypeConfig.airChainCeiling"/> so a fast chain plateaus
-        /// instead of flying skyward; bounce pads (heightScale &gt; 1) ignore that.
+        /// Fire a jump beat now. Returns false (no beat) when gated and the 4-beat
+        /// budget is spent. Y stays continuous; only vertical velocity changes.
         /// </summary>
-        void Beat(float heightScale)
+        bool TryBeat(float heightScale, bool gated)
         {
+            if (gated)
+            {
+                if (_beatsLeft <= 0) return false;
+                _beatsLeft--;
+            }
+
             float full = LaunchVelocity * Mathf.Sqrt(Mathf.Max(0.01f, heightScale));
 
             if (_airborne && heightScale <= 1f && _cfg.airChainCeiling > 0f)
@@ -125,15 +132,17 @@ namespace JellyRush.Player
             _airborne = true;
             _game.RegisterJump();
             _visuals?.OnJump(heightScale);
+            return true;
         }
 
-        /// <summary>External trigger (bounce pad) - a stronger beat.</summary>
-        public void ForceBounce() => Beat(_cfg.bouncePadMultiplier);
+        /// <summary>External launch (bounce pad): ungated, ignores the beat budget and the ceiling.</summary>
+        public void ForceBounce() => TryBeat(_cfg.bouncePadMultiplier, gated: false);
 
         void Update()
         {
             if (_cfg == null) return;
-            if (_game.State == GameState.Paused) return;
+            var state = _game.State;
+            if (state == GameState.Paused || state == GameState.Failed) return;
 
             float dt = Time.deltaTime;
 
@@ -143,30 +152,65 @@ namespace JellyRush.Player
             _laneX = Mathf.SmoothDamp(_laneX, targetX, ref _laneXVel,
                                      Mathf.Max(0.02f, _cfg.laneChangeDuration));
 
-            // --- vertical integration (velocity + gravity) -----------------
+            bool overPlatform = TryGetPlatformBelow(out float surfaceY);
+
             if (_airborne)
             {
                 _vy -= Gravity * dt;
                 _y += _vy * dt;
 
-                if (_y <= _cfg.groundY && _vy <= 0f)
+                if (_vy <= 0f && overPlatform && _y <= surfaceY + _cfg.landSnap)
                 {
-                    _y = _cfg.groundY;
-                    _vy = 0f;
-                    _airborne = false;
-                    _visuals?.OnLand();
+                    Land(surfaceY);
+                }
+                else if (_y < _cfg.failY)
+                {
+                    _game.Fail("fell into the gap");
                 }
             }
             else
             {
-                _y = _cfg.groundY;
+                if (overPlatform)
+                    _y = surfaceY;                 // riding the platform as it scrolls past
+                else
+                    _airborne = true;              // walked off the edge / platform gone -> fall
             }
 
             ApplyPosition();
 
-            // --- visual lean toward the lane we are sliding to --------------
             float lean = Mathf.Clamp(_laneXVel / _cfg.laneSpacing, -1f, 1f);
             _visuals?.SetLean(-lean * _cfg.laneLeanAngle);
+        }
+
+        void Land(float surfaceY)
+        {
+            _y = surfaceY;
+            _vy = 0f;
+            _airborne = false;
+            _beatsLeft = Mathf.Max(1, _cfg.maxAirJumpBeats);   // refill the 4-beat budget
+            _visuals?.OnLand();
+        }
+
+        /// <summary>
+        /// Raycast straight down for a landable platform under the pair's current
+        /// lane X. Only solid Platform / MovingPlatform colliders count.
+        /// </summary>
+        bool TryGetPlatformBelow(out float surfaceY)
+        {
+            surfaceY = 0f;
+            Vector3 origin = new Vector3(_laneX, _y + 0.6f, _cfg.playerZ);
+            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 6f,
+                                ~0, QueryTriggerInteraction.Ignore))
+            {
+                var tag = hit.collider.GetComponentInParent<SpawnableTag>();
+                if (tag != null &&
+                    (tag.Kind == SpawnableKind.Platform || tag.Kind == SpawnableKind.MovingPlatform))
+                {
+                    surfaceY = hit.point.y;
+                    return true;
+                }
+            }
+            return false;
         }
 
         void ApplyPosition()

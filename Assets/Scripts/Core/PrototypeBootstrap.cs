@@ -49,7 +49,7 @@ namespace JellyRush.Core
             var scroller = new GameObject("WorldScroller").AddComponent<WorldScroller>();
             scroller.Configure(_config, game, worldRoot);
 
-            BuildFloor(scroller);
+            BuildAbyss(scroller);
             BuildLaneRails();
 
             // --- lanes --------------------------------------------------------
@@ -80,7 +80,9 @@ namespace JellyRush.Core
             // --- UI --------------------------------------------------------
             EnsureEventSystem();
             var hudGo = new GameObject("HUD");
-            hudGo.AddComponent<HudController>().Build(game);
+            var hud = hudGo.AddComponent<HudController>();
+            hud.Build(game);
+            hud.BindPlayerDebug(player);
 
             Debug.Log("[JellyRush] Prototype scene assembled. Tap = jump, swipe L/R = lane jump.");
         }
@@ -99,20 +101,24 @@ namespace JellyRush.Core
             RenderSettings.ambientLight = new Color(0.55f, 0.58f, 0.65f);
         }
 
-        void BuildFloor(WorldScroller scroller)
+        void BuildAbyss(WorldScroller scroller)
         {
+            // Round 2: NO continuous ground. This plane sits far BELOW the fail line
+            // (config.failY) purely as a distant moving backdrop so a fall reads and
+            // depth still has motion. It has no collider - it can never be landed on.
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            floor.name = "ScrollingFloor";
-            // Plane is 10x10 units; stretch far into depth, centred ahead of the player.
-            floor.transform.localScale = new Vector3(1.6f, 1f, 45f);
-            floor.transform.position = new Vector3(0f, -0.55f, _config.playerZ + 210f);
+            floor.name = "AbyssBackdrop";
+            floor.transform.localScale = new Vector3(3f, 1f, 45f);
+            floor.transform.position = new Vector3(0f, _config.failY - 6f, _config.playerZ + 210f);
             var rend = floor.GetComponent<Renderer>();
             var shader = Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit");
             var mat = new Material(shader);
-            var tex = ScrollingFloor.BuildGrid();
+            var tex = ScrollingFloor.BuildGrid(128,
+                new Color(0.30f, 0.34f, 0.42f), new Color(0.22f, 0.25f, 0.32f));
             mat.mainTexture = tex;
-            mat.mainTextureScale = new Vector2(3f, 150f);
+            mat.mainTextureScale = new Vector2(4f, 150f);
             rend.material = mat;
+            rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             floor.GetComponent<Collider>().enabled = false;
             floor.AddComponent<ScrollingFloor>().Configure(scroller);
         }
@@ -123,7 +129,7 @@ namespace JellyRush.Core
             // (CAMERA_AND_DEPTH_SPEC section 4) without drawn lane stripes on the HUD.
             var railMat = new Material(Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit"))
             {
-                color = new Color(1f, 1f, 1f, 0.10f)
+                color = new Color(1f, 1f, 1f, 0.14f)
             };
             for (int lane = 0; lane < LaneSystem.LaneCount; lane++)
             {

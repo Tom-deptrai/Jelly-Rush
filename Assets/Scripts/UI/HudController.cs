@@ -15,9 +15,11 @@ namespace JellyRush.UI
         Text _distance;
         Text _coins;
         Text _combo;
+        Text _debug;
         GameObject _retryPanel;
         Text _retryStats;
         Font _font;
+        JellyRush.Player.PlayerController _player;
 
         public void Build(GameManager game)
         {
@@ -41,6 +43,8 @@ namespace JellyRush.UI
                 new Vector2(-40f, -40f), TextAnchor.UpperRight, 54, "0");
             _combo = Label(canvasGo.transform, "Combo", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
                 new Vector2(0f, -120f), TextAnchor.UpperCenter, 44, "");
+            _debug = Label(canvasGo.transform, "Debug", new Vector2(0f, 0f), new Vector2(0f, 0f),
+                new Vector2(40f, 40f), TextAnchor.LowerLeft, 36, "");
 
             MakeButton(canvasGo.transform, "PauseButton", new Vector2(1f, 0f), new Vector2(-40f, 40f),
                 new Vector2(150f, 110f), "II", () => _game.TogglePause());
@@ -51,6 +55,15 @@ namespace JellyRush.UI
             _game.ComboChanged += c => _combo.text = c >= 2 ? $"COMBO x{c}" : "";
             _game.DistanceChanged += d => _distance.text = $"{Mathf.FloorToInt(d)} m";
             _game.StateChanged += OnState;
+        }
+
+        /// <summary>Temporary debug readout (round 2): remaining jump-beat budget.</summary>
+        public void BindPlayerDebug(JellyRush.Player.PlayerController player) => _player = player;
+
+        void Update()
+        {
+            if (_player != null && _debug != null)
+                _debug.text = $"beats: {_player.BeatsLeft}   {(_player.IsAirborne ? "air" : "grounded")}";
         }
 
         void OnState(GameState s)

@@ -76,6 +76,22 @@ namespace JellyRush.Core
                  "instead of flying to the sky (CAMERA spec section 2 & 10). A single " +
                  "ground jump is unaffected because its apex is below this.")]
         public float airChainCeiling = 2.7f;
+
+        [Tooltip("Max consecutive jump beats between two successful platform landings. " +
+                 "Every Tap / lane-swipe that fires a beat spends one. Refilled on landing.")]
+        public int maxAirJumpBeats = 4;
+
+        [Header("Platforms / fall (round 2 - platform-to-platform)")]
+        [Tooltip("World Y below which a falling player is Game Over (no more ground).")]
+        public float failY = -4f;
+        [Tooltip("Height above a platform top within which a falling player latches on.")]
+        public float landSnap = 0.35f;
+        [Tooltip("Z length of short / medium / long platforms.")]
+        public float platformShortZ = 2.2f;
+        public float platformMediumZ = 4.2f;
+        public float platformLongZ = 8f;
+        [Tooltip("Z length of the guaranteed starting platform under the player.")]
+        public float startPlatformZ = 26f;
         [Tooltip("Resting height of the player unit above the lane floor.")]
         public float groundY = 0f;
 

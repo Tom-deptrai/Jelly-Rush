@@ -8,11 +8,15 @@ using UnityEngine;
 namespace JellyRush.Spawning
 {
     /// <summary>
-    /// Test spawner (CAMERA_AND_DEPTH_SPEC section 6). Every element is created far
-    /// ahead of the player (small on screen) and parented under the world root, so
-    /// it travels toward the camera and grows via perspective. Simple pooling keeps
-    /// motion smooth under rapid play. Patterns are hand-picked and always leave at
-    /// least one clear lane - no unfair situations.
+    /// Round 2 test spawner: platform-to-platform, no continuous ground.
+    ///
+    /// Every slot drops exactly ONE landable platform (short / medium / long) in
+    /// some lane, with gaps of open space between slots. A guaranteed long start
+    /// platform sits under the player, and the visible pipeline is pre-filled at
+    /// Configure() so platforms keep arriving from the depth (CAMERA spec 6) the
+    /// moment the world starts scrolling. Light decoration (coin, side obstacle,
+    /// bounce pad, rare rotating bar / closing gate) never removes the landable
+    /// platform for that slot - no unfair situations.
     /// </summary>
     public class Spawner : MonoBehaviour
     {
@@ -26,7 +30,7 @@ namespace JellyRush.Spawning
         readonly Dictionary<SpawnableKind, Stack<GameObject>> _pool = new();
 
         float _nextSpawnDistance;
-        float _elapsed;
+        const float FirstSlotDistance = 9f;   // metres ahead where the first gap-platform sits
 
         public void Configure(PrototypeConfig cfg, GameManager game, WorldScroller world, LaneSystem lanes)
         {
@@ -35,7 +39,16 @@ namespace JellyRush.Spawning
             _world = world;
             _lanes = lanes;
             _factory = new SpawnableFactory(world.WorldRoot);
-            _nextSpawnDistance = cfg.spawnAheadDistance;
+
+            SpawnStartPlatform();
+
+            // Pre-fill the pipeline so there is always a platform to reach.
+            _nextSpawnDistance = FirstSlotDistance;
+            while (_nextSpawnDistance <= _cfg.spawnAheadDistance)
+            {
+                SpawnSlot(_nextSpawnDistance);
+                _nextSpawnDistance += NextInterval();
+            }
         }
 
         void Update()
@@ -43,86 +56,95 @@ namespace JellyRush.Spawning
             if (_cfg == null) return;
             if (_game.State == GameState.Paused || _game.State == GameState.Failed) return;
 
-            _elapsed += Time.deltaTime;
             Recycle();
-
             if (_game.State == GameState.Warmup) return;
 
-            while (_world.DistanceTravelled + LookAhead() >= _nextSpawnDistance)
+            while (_world.DistanceTravelled + _cfg.spawnAheadDistance >= _nextSpawnDistance)
             {
                 SpawnSlot(_nextSpawnDistance);
-                float interval = _cfg.spawnIntervalMeters +
-                                 Random.Range(-_cfg.spawnIntervalJitter, _cfg.spawnIntervalJitter);
-                _nextSpawnDistance += Mathf.Max(2.5f, interval);
+                _nextSpawnDistance += NextInterval();
             }
         }
 
-        float LookAhead() => _cfg.spawnAheadDistance;
+        float NextInterval() => Mathf.Max(3f,
+            _cfg.spawnIntervalMeters + Random.Range(-_cfg.spawnIntervalJitter, _cfg.spawnIntervalJitter));
 
-        /// <summary>
-        /// Local Z under the world root for an element that should reach the player
-        /// once DistanceTravelled == atDistance. worldRoot starts at z=0 and moves to
-        /// z=-DistanceTravelled, so worldZ = localZ - DistanceTravelled and we want
-        /// worldZ = playerZ + (atDistance - DistanceTravelled)  =>  localZ = playerZ + atDistance.
-        /// </summary>
+        /// <summary>localZ under the world root for something that reaches the player at DistanceTravelled == atDistance.</summary>
         float SpawnLocalZ(float atDistance) => _cfg.playerZ + atDistance;
+
+        void SpawnStartPlatform()
+        {
+            var go = Rent(SpawnableKind.Platform);
+            go.transform.SetParent(_world.WorldRoot, false);
+            go.transform.localScale = new Vector3(2.0f, 0.5f, _cfg.startPlatformZ);
+            // extends from just behind the player to a good way ahead
+            float centreZ = _cfg.playerZ + _cfg.startPlatformZ * 0.5f - 6f;
+            go.transform.localPosition = new Vector3(_lanes.LaneToX(LaneSystem.Center), -0.25f, centreZ);
+            go.SetActive(true);
+            _live.Add(go);
+        }
 
         void SpawnSlot(float atDistance)
         {
-            bool warmClear = _elapsed < _cfg.warmupSeconds;
-            int pattern = warmClear ? 0 : Random.Range(0, 8);
             float z = SpawnLocalZ(atDistance);
+            bool gentle = atDistance < FirstSlotDistance + 22f;
 
-            switch (pattern)
+            int lane = gentle ? LaneSystem.Center : Random.Range(0, LaneSystem.LaneCount);
+
+            float lengthZ;
+            SpawnableKind platformKind = SpawnableKind.Platform;
+            if (gentle)
             {
-                case 0: // plain landing row + a coin
-                    Place(SpawnableKind.Platform, LaneSystem.Center, z);
-                    Place(SpawnableKind.Coin, LaneSystem.Center, z, yOffset: 1.1f);
-                    break;
-                case 1: // offset platform left/right
-                    {
-                        int lane = Random.value < 0.5f ? LaneSystem.Left : LaneSystem.Right;
-                        Place(SpawnableKind.Platform, lane, z);
-                        Place(SpawnableKind.Coin, lane, z, yOffset: 1.1f);
-                        break;
-                    }
-                case 2: // coin trail across the three lanes
-                    Place(SpawnableKind.Coin, LaneSystem.Left, z, yOffset: 1.0f);
-                    Place(SpawnableKind.Coin, LaneSystem.Center, z + 1.4f, yOffset: 1.0f);
-                    Place(SpawnableKind.Coin, LaneSystem.Right, z + 2.8f, yOffset: 1.0f);
-                    break;
-                case 3: // obstacle blocking ONE lane, others clear
-                    {
-                        int block = Random.Range(0, 3);
-                        Place(SpawnableKind.Obstacle, block, z);
-                        int safe = (block + 1) % 3;
-                        Place(SpawnableKind.Coin, safe, z, yOffset: 1.1f);
-                        break;
-                    }
-                case 4: // moving platform
-                    Place(SpawnableKind.MovingPlatform, LaneSystem.Center, z);
-                    break;
-                case 5: // rotating bar (sweep) - jump-timing test
-                    Place(SpawnableKind.RotatingBar, LaneSystem.Center, z, yOffset: 0.5f);
-                    break;
-                case 6: // closing gate, center lane safe
-                    Place(SpawnableKind.ClosingGate, LaneSystem.Center, z);
-                    break;
-                case 7: // bounce pad + coin reward high above
-                    Place(SpawnableKind.BouncePad, LaneSystem.Center, z);
-                    Place(SpawnableKind.Coin, LaneSystem.Center, z + 3f, yOffset: 2.4f);
-                    break;
+                lengthZ = _cfg.platformLongZ;
             }
+            else
+            {
+                float r = Random.value;
+                lengthZ = r < 0.4f ? _cfg.platformShortZ
+                        : r < 0.8f ? _cfg.platformMediumZ
+                        : _cfg.platformLongZ;
+                if (Random.value < 0.12f) platformKind = SpawnableKind.MovingPlatform;
+            }
+
+            PlacePlatform(platformKind, lane, z, lengthZ);
+
+            if (gentle) return;
+
+            // --- light decoration on top of / beside the landable platform ---
+            float d = Random.value;
+            if (d < 0.35f)
+                Place(SpawnableKind.Coin, lane, z, yOffset: 1.2f);
+            else if (d < 0.50f)
+                Place(SpawnableKind.BouncePad, lane, z, yOffset: 0.55f);
+            else if (d < 0.62f)
+            {
+                int sideLane = (lane + 1 + Random.Range(0, 2)) % LaneSystem.LaneCount;
+                if (sideLane != lane) Place(SpawnableKind.Obstacle, sideLane, z, yOffset: 0.2f);
+            }
+            else if (d < 0.68f)
+                Place(SpawnableKind.RotatingBar, lane, z, yOffset: 1.7f);
+            else if (d < 0.72f)
+                Place(SpawnableKind.ClosingGate, lane, z);
+        }
+
+        void PlacePlatform(SpawnableKind kind, int lane, float localZ, float lengthZ)
+        {
+            var go = Rent(kind);
+            go.transform.SetParent(_world.WorldRoot, false);
+            go.transform.localScale = new Vector3(1.9f, 0.4f, lengthZ);
+            go.transform.localPosition = new Vector3(_lanes.LaneToX(lane), -0.2f, localZ);
+            go.transform.localRotation = Quaternion.identity;
+            go.SetActive(true);
+            if (go.TryGetComponent<MovingPlatform>(out var mp))
+                mp.Init(0.8f, 1.0f, Random.value * Mathf.PI * 2f);
+            _live.Add(go);
         }
 
         void Place(SpawnableKind kind, int lane, float localZ, float yOffset = 0f)
         {
             var go = Rent(kind);
             go.transform.SetParent(_world.WorldRoot, false);
-            float y = kind == SpawnableKind.Platform || kind == SpawnableKind.MovingPlatform || kind == SpawnableKind.BouncePad
-                ? -0.2f + yOffset
-                : 0.2f + yOffset;
-            go.transform.localPosition = new Vector3(_lanes.LaneToX(lane), y, localZ);
+            go.transform.localPosition = new Vector3(_lanes.LaneToX(lane), 0.2f + yOffset, localZ);
             go.SetActive(true);
             _live.Add(go);
         }
