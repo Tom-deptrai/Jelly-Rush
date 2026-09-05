@@ -6,9 +6,9 @@ namespace JellyRush.World
     /// <summary>
     /// CAMERA_AND_DEPTH_SPEC section 7, technical option A: the world moves toward
     /// the camera. Every gameplay element is parented under <see cref="WorldRoot"/>,
-    /// which slides in -Z. So elements are authored far away (small on screen), then
-    /// travel toward the player and grow via perspective - never "falling from the
-    /// top edge". Speed ramps up slowly over the run.
+    /// which slides in -Z. Speed ramps from start to max over the run; the ramp
+    /// values come from the active <see cref="Level.LevelData"/> so each level can
+    /// pace itself. Stops on Paused / Failed / Completed.
     /// </summary>
     public class WorldScroller : MonoBehaviour
     {
@@ -18,24 +18,31 @@ namespace JellyRush.World
 
         PrototypeConfig _cfg;
         GameManager _game;
+        float _startSpeed;
+        float _maxSpeed;
+        float _accel;
 
-        public void Configure(PrototypeConfig cfg, GameManager game, Transform worldRoot)
+        public void Configure(PrototypeConfig cfg, GameManager game, Transform worldRoot,
+                              float startSpeed, float maxSpeed, float acceleration)
         {
             _cfg = cfg;
             _game = game;
             WorldRoot = worldRoot;
-            CurrentSpeed = cfg.startScrollSpeed;
+            _startSpeed = startSpeed > 0f ? startSpeed : cfg.startScrollSpeed;
+            _maxSpeed = maxSpeed > 0f ? maxSpeed : cfg.maxScrollSpeed;
+            _accel = acceleration >= 0f ? acceleration : cfg.scrollAcceleration;
+            CurrentSpeed = _startSpeed;
         }
 
         void Update()
         {
             if (_cfg == null) return;
             var state = _game.State;
-            if (state == GameState.Paused || state == GameState.Failed) return;
-            if (state == GameState.Warmup) return; // wait for first input
+            if (state == GameState.Paused || state == GameState.Failed ||
+                state == GameState.Completed || state == GameState.Warmup)
+                return;
 
-            CurrentSpeed = Mathf.Min(_cfg.maxScrollSpeed,
-                                     CurrentSpeed + _cfg.scrollAcceleration * Time.deltaTime);
+            CurrentSpeed = Mathf.Min(_maxSpeed, CurrentSpeed + _accel * Time.deltaTime);
 
             float step = CurrentSpeed * Time.deltaTime;
             WorldRoot.position += new Vector3(0f, 0f, -step);

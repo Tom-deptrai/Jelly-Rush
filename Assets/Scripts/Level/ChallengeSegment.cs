@@ -55,6 +55,8 @@ namespace JellyRush.Level
         public List<PlatformStep> platforms = new();
         public List<DecoStep> decos = new();
 
+        public ChallengeSegment() { }
+
         public ChallengeSegment(string name, float length)
         {
             this.name = name;

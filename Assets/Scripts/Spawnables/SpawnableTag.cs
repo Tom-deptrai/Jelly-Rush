@@ -10,7 +10,8 @@ namespace JellyRush.Spawnables
         MovingPlatform,
         RotatingBar,
         ClosingGate,
-        BouncePad
+        BouncePad,
+        FinishPlatform
     }
 
     /// <summary>Lightweight identity marker read by player collisions and the spawner pool.</summary>

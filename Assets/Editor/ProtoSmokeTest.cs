@@ -82,39 +82,37 @@ namespace JellyRush.EditorTools
 
             _frames++;
 
-            // one normal tap (settles), then a fast tap burst (~20/s) with swipes
-            // fired mid-burst while airborne, then a second fast burst.
-            if (_frames == 40) SendGesture(JellyRush.InputSystem.GestureType.Tap);
-            if (_frames >= 90 && _frames <= 150 && _frames % 3 == 0)
-                SendGesture(JellyRush.InputSystem.GestureType.Tap);
-            if (_frames == 108) SendGesture(JellyRush.InputSystem.GestureType.SwipeLeft);   // airborne
-            if (_frames == 126) SendGesture(JellyRush.InputSystem.GestureType.SwipeRight);  // airborne
-            if (_frames >= 200 && _frames <= 250 && _frames % 3 == 0)
-                SendGesture(JellyRush.InputSystem.GestureType.Tap);
+            // Round 5: hand the level to the Auto Test bot and let it drive.
+            if (_frames == 15) EnableAutoBot();
 
-            // advance exactly one engine frame with the input we just injected
+            // advance exactly one engine frame
             EditorApplication.Step();
 
             TrackPlayer();
 
-            if (_frames == 60)
+            if (_frames == 120)
                 CaptureCameraToFile();
 
-            if (_frames >= 340)
+            const int LastFrame = 1500;   // ~25 s of deterministic play - not a full run
+            if (_frames >= LastFrame)
             {
                 EditorApplication.update -= Tick;
                 Time.captureDeltaTime = 0f;
 
-                // Only hard-fail on red errors / exceptions and on a Y teleport.
-                float launchStep = 16.5f / 60f;  // ~ v0 * dt, the largest legit per-frame move
+                float launchStep = 16.5f / 60f;
                 if (_maxYStep > launchStep * 2.2f)
                     _errors.Add($"Y teleport suspected: max single-frame Y move = {_maxYStep:F3}");
 
-                var st = JellyRush.Core.GameManager.Instance != null
-                    ? JellyRush.Core.GameManager.Instance.State.ToString() : "?";
+                var gm = JellyRush.Core.GameManager.Instance;
+                string st = gm != null ? gm.State.ToString() : "?";
+                float dist = gm != null ? gm.DistanceMeters : 0f;
+                if (gm != null && dist < 40f)
+                    _errors.Add($"Auto bot made no progress: distance={dist:F1} state={st}");
+
                 bool ok = _errors.Count == 0;
                 Debug.Log($"[ProtoSmokeTest] frames={_frames} errors={_errors.Count} ok={ok} " +
-                          $"state={st} maxY={_maxY:F2} maxYStep={_maxYStep:F3} bestCombo={_beatsSeen}");
+                          $"state={st} distance={dist:F0} coins={(gm != null ? gm.Coins : 0)} " +
+                          $"maxY={_maxY:F2} maxYStep={_maxYStep:F3} bestCombo={_beatsSeen}");
                 foreach (var e in _errors) Debug.LogWarning("[ProtoSmokeTest] " + e);
                 EditorApplication.isPlaying = false;
                 EditorApplication.Exit(ok ? 0 : 1);
@@ -157,11 +155,11 @@ namespace JellyRush.EditorTools
             Debug.Log("[ProtoSmokeTest] wrote " + _shotPath);
         }
 
-        static void SendGesture(JellyRush.InputSystem.GestureType g)
+        static void EnableAutoBot()
         {
-            var input = Object.FindAnyObjectByType<JellyRush.InputSystem.SwipeTapInput>();
-            if (input == null) { _errors.Add("SwipeTapInput not found in scene"); return; }
-            input.Simulate(g);
+            var bot = Object.FindAnyObjectByType<JellyRush.Debugging.AutoPlayBot>();
+            if (bot == null) { _errors.Add("AutoPlayBot not found in scene"); return; }
+            bot.Active = true;
         }
     }
 }

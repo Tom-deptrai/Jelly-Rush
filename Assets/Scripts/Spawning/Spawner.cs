@@ -9,13 +9,10 @@ using UnityEngine;
 namespace JellyRush.Spawning
 {
     /// <summary>
-    /// Round 3: streams a level made of hand-authored <see cref="ChallengeSegment"/>s
-    /// instead of random slots. Each segment's platforms / decos are emitted far
-    /// ahead (CAMERA spec 6) and parented under the world root so they travel toward
-    /// the camera. Platforms carry a lane (X) AND a tier (Y) from <see cref="HeightGrid"/>.
-    /// A guaranteed start platform sits under the player and the visible pipeline is
-    /// pre-filled so there is always a reachable platform. The level loops (from the
-    /// segment after Start) so playtests keep going.
+    /// Round 5: streams the active <see cref="LevelData"/> - its ChallengeSegments
+    /// once, in order, then (after a clear runway) a single Finish Platform. No
+    /// looping. Everything is emitted far ahead (CAMERA spec 6) under the world
+    /// root. Platforms carry a lane (X) and a tier (Y) from <see cref="HeightGrid"/>.
     /// </summary>
     public class Spawner : MonoBehaviour
     {
@@ -24,58 +21,72 @@ namespace JellyRush.Spawning
         WorldScroller _world;
         LaneSystem _lanes;
         HeightGrid _heights;
+        LevelData _level;
         SpawnableFactory _factory;
 
         readonly List<GameObject> _live = new();
         readonly Dictionary<SpawnableKind, Stack<GameObject>> _pool = new();
 
-        List<ChallengeSegment> _level;
         int _segIndex;
-        float _nextSegmentDistance;      // travel distance at which the next segment's START reaches the player
-        const int LoopFromIndex = 1;     // skip the intro when looping
+        float _nextSegmentDistance;   // travel distance at which the next segment's START reaches the player
+        float _finishDistance;
+        bool _segmentsDone;
+        bool _finishSpawned;
+
+        /// <summary>Live gameplay objects, for the Auto Test bot to read.</summary>
+        public IReadOnlyList<GameObject> LiveObjects => _live;
+        public bool FinishSpawned => _finishSpawned;
 
         public void Configure(PrototypeConfig cfg, GameManager game, WorldScroller world,
-                              LaneSystem lanes, HeightGrid heights, WorldThemeData theme)
+                              LaneSystem lanes, HeightGrid heights, WorldThemeData theme, LevelData level)
         {
             _cfg = cfg;
             _game = game;
             _world = world;
             _lanes = lanes;
             _heights = heights;
+            _level = level;
             _factory = new SpawnableFactory(world.WorldRoot, theme);
-            _level = SegmentLibrary.PrototypeLevel();
 
             SpawnStartPlatform();
 
-            // Pre-fill the pipeline: keep emitting whole segments until the front of
-            // the queue is past the spawn-ahead distance.
             _segIndex = 0;
             _nextSegmentDistance = 6f;
-            while (_nextSegmentDistance <= _cfg.spawnAheadDistance)
+            // Pre-fill the visible pipeline.
+            while (!_segmentsDone && _nextSegmentDistance <= _cfg.spawnAheadDistance)
                 EmitNextSegment();
         }
 
         void Update()
         {
             if (_cfg == null) return;
-            if (_game.State == GameState.Paused || _game.State == GameState.Failed) return;
+            var st = _game.State;
+            if (st == GameState.Paused || st == GameState.Failed || st == GameState.Completed) return;
 
             Recycle();
-            if (_game.State == GameState.Warmup) return;
+            if (st == GameState.Warmup) return;
 
-            while (_world.DistanceTravelled + _cfg.spawnAheadDistance >= _nextSegmentDistance)
+            float reach = _world.DistanceTravelled + _cfg.spawnAheadDistance;
+
+            while (!_segmentsDone && reach >= _nextSegmentDistance)
                 EmitNextSegment();
+
+            if (_segmentsDone && !_finishSpawned && reach >= _finishDistance)
+                SpawnFinish();
         }
 
         void EmitNextSegment()
         {
-            var seg = _level[_segIndex];
+            var seg = _level.segments[_segIndex];
             EmitSegment(seg, _nextSegmentDistance);
             _nextSegmentDistance += Mathf.Max(6f, seg.length);
-
             _segIndex++;
-            if (_segIndex >= _level.Count)
-                _segIndex = Mathf.Min(LoopFromIndex, _level.Count - 1);
+
+            if (_segIndex >= _level.segments.Count)
+            {
+                _segmentsDone = true;
+                _finishDistance = _nextSegmentDistance + Mathf.Max(6f, _level.finishRunwayZ);
+            }
         }
 
         void EmitSegment(ChallengeSegment seg, float atDistance)
@@ -103,6 +114,20 @@ namespace JellyRush.Spawning
             float top = _cfg.startHeight;
             float centreZ = _cfg.playerZ + _cfg.startPlatformZ * 0.5f - 6f;
             go.transform.localPosition = new Vector3(_lanes.LaneToX(LaneSystem.Center), top - 0.25f, centreZ);
+            go.transform.localRotation = Quaternion.identity;
+            go.SetActive(true);
+            _live.Add(go);
+        }
+
+        void SpawnFinish()
+        {
+            _finishSpawned = true;
+            var go = Rent(SpawnableKind.FinishPlatform);
+            go.transform.SetParent(_world.WorldRoot, false);
+            go.transform.localScale = Vector3.one;
+            float x = _lanes.LaneToX(_lanes.ClampLane(_level.finishLane));
+            float y = _heights.TierToY(_level.finishTier);   // pad top sits exactly at the tier
+            go.transform.localPosition = new Vector3(x, y, LocalZ(_finishDistance));
             go.transform.localRotation = Quaternion.identity;
             go.SetActive(true);
             _live.Add(go);
@@ -148,8 +173,8 @@ namespace JellyRush.Spawning
 
         static float DecoBaseY(SpawnableKind kind) => kind switch
         {
-            SpawnableKind.Coin => 0.45f,       // floats above the surface
-            SpawnableKind.Obstacle => 0.75f,   // base sits on the tier
+            SpawnableKind.Coin => 0.45f,
+            SpawnableKind.Obstacle => 0.75f,
             _ => 0f,
         };
 

@@ -1,6 +1,8 @@
 using JellyRush.CameraRig;
+using JellyRush.Debugging;
 using JellyRush.InputSystem;
 using JellyRush.Lanes;
+using JellyRush.Level;
 using JellyRush.Player;
 using JellyRush.Spawning;
 using JellyRush.UI;
@@ -24,9 +26,17 @@ namespace JellyRush.Core
     {
         [SerializeField] PrototypeConfig _config = new();
 
-        [Tooltip("Optional: a authored World Theme asset. When empty a placeholder " +
-                 "theme is built at runtime from PrototypeConfig.startingTheme.")]
+        [Tooltip("Optional: an authored World Theme asset. When empty a placeholder " +
+                 "theme is built at runtime from the level's worldThemeId.")]
         [SerializeField] JellyRush.World.WorldThemeData _themeAsset;
+
+        [Tooltip("Optional: an authored Level Data asset. When empty, LevelLibrary " +
+                 "builds the prototype level at runtime.")]
+        [SerializeField] LevelData _levelAsset;
+
+        /// <summary>Set by GameManager before a scene reload (RETRY / NEXT LEVEL) to
+        /// pick which level the fresh scene should build. Consumed once in Awake.</summary>
+        public static LevelData PendingLevel;
 
         public PrototypeConfig Config => _config;
 
@@ -45,10 +55,17 @@ namespace JellyRush.Core
             var game = gameObject.AddComponent<GameManager>();
             game.Init(_config);
 
-            // --- world theme (round 3): palette + per-function prefab set --------
-            var theme = _themeAsset != null
-                ? _themeAsset
-                : WorldThemeLibrary.Get(_config.startingTheme);
+            // --- level (round 5): data drives the run ---------------------------
+            var level = _levelAsset != null ? _levelAsset
+                      : PendingLevel != null ? PendingLevel
+                      : LevelLibrary.Get(LevelLibrary.Level01Id);
+            PendingLevel = null;                 // consume the one-shot
+            game.SetLevel(level);
+
+            // --- world theme: level's override / asset / palette placeholder ----
+            var theme = level.themeOverride != null ? level.themeOverride
+                      : _themeAsset != null ? _themeAsset
+                      : WorldThemeLibrary.Get(level.worldThemeId);
 
             BuildLighting();
 
@@ -57,7 +74,8 @@ namespace JellyRush.Core
             worldRoot.position = Vector3.zero;
 
             var scroller = new GameObject("WorldScroller").AddComponent<WorldScroller>();
-            scroller.Configure(_config, game, worldRoot);
+            scroller.Configure(_config, game, worldRoot,
+                               level.startScrollSpeed, level.maxScrollSpeed, level.scrollAcceleration);
 
             // Round 4: no floor plane, no lane rails. Space below the platforms is
             // genuinely empty - a missed jump falls away into the depth. Depth is
@@ -89,9 +107,13 @@ namespace JellyRush.Core
 
             BuildAtmosphere(theme);
 
-            // --- spawner (segment streamer) -------------------------------
+            // --- spawner (level streamer + Finish) ------------------------
             var spawner = new GameObject("Spawner").AddComponent<Spawner>();
-            spawner.Configure(_config, game, scroller, lanes, heights, theme);
+            spawner.Configure(_config, game, scroller, lanes, heights, theme, level);
+
+            // --- debug auto-test bot -------------------------------------
+            var bot = new GameObject("AutoPlayBot").AddComponent<AutoPlayBot>();
+            bot.Configure(_config, game, player, input, spawner, lanes, heights, scroller);
 
             // --- UI --------------------------------------------------------
             EnsureEventSystem();
@@ -99,8 +121,10 @@ namespace JellyRush.Core
             var hud = hudGo.AddComponent<HudController>();
             hud.Build(game);
             hud.BindPlayerDebug(player);
+            hud.BindAutoTest(_config.enableDebugAutoTest, bot);
 
-            Debug.Log("[JellyRush] Prototype scene assembled. Tap = jump, swipe L/R = lane jump.");
+            Debug.Log($"[JellyRush] Level '{level.levelId}' assembled ({level.segments.Count} segments, " +
+                      $"theme {theme.displayName}). Tap = jump, swipe L/R = lane jump.");
         }
 
         void BuildLighting()

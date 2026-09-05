@@ -32,7 +32,11 @@ namespace JellyRush.InputSystem
         readonly Dictionary<int, Touched> _active = new();
         const int MouseId = -99;
 
-        /// <summary>Inject a gesture directly (debug / automated smoke tests).</summary>
+        /// <summary>When true, real touch/mouse is ignored (Auto Test mode drives the pair).
+        /// <see cref="Simulate"/> still works so the bot can play through this same path.</summary>
+        public bool SuppressUserInput { get; set; }
+
+        /// <summary>Inject a gesture directly (debug bot / automated smoke tests).</summary>
         public void Simulate(GestureType gesture) => Gesture?.Invoke(gesture);
 
         public void Configure(float swipeThresholdFraction, float maxGestureTime)
@@ -44,6 +48,8 @@ namespace JellyRush.InputSystem
 
         void Update()
         {
+            if (SuppressUserInput) { _active.Clear(); return; }
+
             // --- Touch (mobile) -------------------------------------------------
             if (Input.touchSupported && Input.touchCount > 0)
             {

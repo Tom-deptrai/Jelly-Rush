@@ -55,7 +55,7 @@ namespace JellyRush.Spawnables
         [SerializeField] Transform _leftPanel;
         [SerializeField] Transform _rightPanel;
         int _safeLane = 1;
-        float _cycle = 2.4f;
+        float _cycle = 3.6f;
         float _openX = 2.6f;
         float _closedX = 0.55f;
 
@@ -78,7 +78,7 @@ namespace JellyRush.Spawnables
 
         public bool BlocksPlayerNow(int lane)
         {
-            if (Closed01 > 0.85f) return true;      // slammed shut
+            if (Closed01 > 0.9f) return true;       // slammed shut
             return lane != _safeLane;               // only the safe lane is clear
         }
     }

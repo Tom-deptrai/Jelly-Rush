@@ -49,6 +49,13 @@ namespace JellyRush.Player
             _squash = 0.6f;
         }
 
+        /// <summary>Hook for the future victory pose / two-character celebration. Stub for now.</summary>
+        public void OnLevelComplete()
+        {
+            _excite = 1f;
+            _squash = 1f;
+        }
+
         public void OnLaneChange(int dir)
         {
             _excite = Mathf.Min(1f, _excite + 0.2f);

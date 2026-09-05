@@ -45,9 +45,13 @@ namespace JellyRush.Player
         int _beatsLeft;
 
         public int CurrentLane => _currentLane;
+        public int TargetLane => _targetLane;
         public bool IsAirborne => _airborne;
+        public bool Grounded => !_airborne;
         public int BeatsLeft => _beatsLeft;
         public float SupportY => _supportY;
+        public float Y => _y;
+        public float VerticalVelocity => _vy;
 
         float Gravity
         {
@@ -89,7 +93,8 @@ namespace JellyRush.Player
 
         void OnGesture(GestureType g)
         {
-            if (_game.State == GameState.Failed || _game.State == GameState.Paused) return;
+            var s = _game.State;
+            if (s == GameState.Failed || s == GameState.Paused || s == GameState.Completed) return;
             _game.BeginRunning();
 
             switch (g)
@@ -146,7 +151,8 @@ namespace JellyRush.Player
         {
             if (_cfg == null) return;
             var state = _game.State;
-            if (state == GameState.Paused || state == GameState.Failed) return;
+            if (state == GameState.Paused || state == GameState.Failed || state == GameState.Completed)
+                return;
 
             float dt = Time.deltaTime;
 
@@ -155,7 +161,7 @@ namespace JellyRush.Player
             _laneX = Mathf.SmoothDamp(_laneX, targetX, ref _laneXVel,
                                      Mathf.Max(0.02f, _cfg.laneChangeDuration));
 
-            bool over = TryGetPlatformBelow(out float surfaceY);
+            bool over = TryGetPlatformBelow(out float surfaceY, out bool isFinish);
 
             if (_airborne)
             {
@@ -164,7 +170,7 @@ namespace JellyRush.Player
 
                 if (_vy <= 0f && over && _y <= surfaceY + _cfg.landSnap)
                 {
-                    Land(surfaceY);
+                    Land(surfaceY, isFinish);
                 }
                 else if (_y < _supportY - _cfg.failDropBelowSupport || _y < _cfg.failHeightAbsolute)
                 {
@@ -191,7 +197,7 @@ namespace JellyRush.Player
             _visuals?.SetLean(-lean * _cfg.laneLeanAngle);
         }
 
-        void Land(float surfaceY)
+        void Land(float surfaceY, bool isFinish)
         {
             _y = surfaceY;
             _vy = 0f;
@@ -200,21 +206,34 @@ namespace JellyRush.Player
             _chainBaseY = surfaceY;
             _beatsLeft = Mathf.Max(1, _cfg.maxAirJumpBeats);
             _visuals?.OnLand();
+
+            if (isFinish)
+            {
+                _visuals?.OnLevelComplete();
+                _game.CompleteLevel();
+            }
         }
 
-        /// <summary>Raycast down for a landable platform under the current lane X.</summary>
-        bool TryGetPlatformBelow(out float surfaceY)
+        /// <summary>
+        /// Raycast down for a landable surface under the current lane X: a normal
+        /// Platform, a MovingPlatform, or the FinishPlatform (isFinish = true).
+        /// </summary>
+        bool TryGetPlatformBelow(out float surfaceY, out bool isFinish)
         {
             surfaceY = 0f;
+            isFinish = false;
             Vector3 origin = new Vector3(_laneX, _y + 0.6f, _cfg.playerZ);
             if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 40f,
                                 ~0, QueryTriggerInteraction.Ignore))
             {
                 var tag = hit.collider.GetComponentInParent<SpawnableTag>();
                 if (tag != null &&
-                    (tag.Kind == SpawnableKind.Platform || tag.Kind == SpawnableKind.MovingPlatform))
+                    (tag.Kind == SpawnableKind.Platform ||
+                     tag.Kind == SpawnableKind.MovingPlatform ||
+                     tag.Kind == SpawnableKind.FinishPlatform))
                 {
                     surfaceY = hit.point.y;
+                    isFinish = tag.Kind == SpawnableKind.FinishPlatform;
                     return true;
                 }
             }

@@ -6,15 +6,15 @@ using static JellyRush.Level.PlatformLength;
 namespace JellyRush.Level
 {
     /// <summary>
-    /// Hand-authored <see cref="ChallengeSegment"/>s (round 3). Each has ONE idea and
-    /// a valid path within the 4-beat budget. <see cref="PrototypeLevel"/> stitches
-    /// them into a level; the spawner streams them and loops the middle.
+    /// Hand-authored <see cref="ChallengeSegment"/>s (round 5). Each has ONE clear
+    /// idea and a valid path within the 4-beat budget. <see cref="LevelData"/>
+    /// chooses which ones and in what order; the spawner streams them once, then a
+    /// Finish Platform.
     ///
-    /// Lanes:  L = left, C = center, R = right
-    /// Tiers:  0 = Low, 1 = Mid, 2 = High
-    /// Convention: first platform at z ~ 2, platforms ~7 m apart, segment length =
-    /// last platform z + 5. Every segment starts and ends at Center so any two
-    /// chain with a comfortable ~7 m gap.
+    /// Lanes:  L left / C center / R right      Tiers:  0 Low / 1 Mid / 2 High
+    /// Convention: first platform ~z 3, platforms ~9-11 m apart, last platform near
+    /// (length - 5). Every segment starts and ends at Center / Low so any two chain
+    /// with a comfortable gap.
     /// </summary>
     public static class SegmentLibrary
     {
@@ -23,106 +23,112 @@ namespace JellyRush.Level
 
         static ChallengeSegment Seg(string name, float length) => new(name, length);
 
-        // --- individual challenge ideas ----------------------------------------
+        // -------------------------------------------------------------------
+        // 0. intro - plain center runway, ~5 seconds to find the rhythm
+        public static ChallengeSegment Intro() => Seg("Intro", 42f)
+            .Platform(C, Lo, Long, 3f)
+            .Platform(C, Lo, Long, 15f)
+            .Platform(C, Lo, Long, 27f)
+            .Platform(C, Lo, Long, 38f);
 
-        public static ChallengeSegment Start() => Seg("Start", 21f)
-            .Platform(C, Lo, Long, 2f)
-            .Platform(C, Lo, Long, 14f);
+        // 1. same-tier timing hops
+        public static ChallengeSegment ShortRun() => Seg("Short Run", 46f)
+            .Platform(C, Lo, Medium, 3f)
+            .Platform(C, Lo, Medium, 12f)
+            .Platform(C, Lo, Medium, 21f, SpawnableKind.MovingPlatform)
+            .Platform(C, Lo, Medium, 30f)
+            .Platform(C, Lo, Medium, 39f)
+            .Deco(SpawnableKind.Coin, C, Lo, 21f, 1.1f);
 
-        public static ChallengeSegment ShortRun() => Seg("Short Run", 26f)
-            .Platform(C, Lo, Medium, 2f)
-            .Platform(C, Lo, Medium, 9f, SpawnableKind.MovingPlatform)
-            .Platform(C, Lo, Medium, 16f)
-            .Platform(C, Lo, Medium, 21f)
-            .Deco(SpawnableKind.Coin, C, Lo, 9f, 1.1f);
+        // 2. weave left / right
+        public static ChallengeSegment LaneChange() => Seg("Lane Change", 48f)
+            .Platform(C, Lo, Medium, 3f)
+            .Platform(R, Lo, Medium, 13f)
+            .Platform(C, Lo, Medium, 23f)
+            .Platform(L, Lo, Medium, 33f)
+            .Platform(C, Lo, Medium, 43f)
+            .Deco(SpawnableKind.Coin, R, Lo, 13f, 1.1f)
+            .Deco(SpawnableKind.Coin, L, Lo, 33f, 1.1f);
 
-        public static ChallengeSegment LaneChange() => Seg("Lane Change", 25f)
-            .Platform(C, Lo, Medium, 2f)
-            .Platform(R, Lo, Medium, 10f)
-            .Platform(L, Lo, Medium, 17f)
-            .Platform(C, Lo, Medium, 20f)
-            .Deco(SpawnableKind.Coin, R, Lo, 10f, 1.1f)
-            .Deco(SpawnableKind.Coin, L, Lo, 17f, 1.1f);
+        // 3. climb Low -> Mid -> High, then step back down
+        public static ChallengeSegment Climb() => Seg("Climb", 50f)
+            .Platform(C, Lo, Medium, 3f)
+            .Platform(C, Mi, Medium, 13f)
+            .Platform(C, Hi, Medium, 23f)
+            .Platform(C, Mi, Medium, 33f)
+            .Platform(C, Lo, Long, 43f)
+            .Deco(SpawnableKind.Coin, C, Lo, 6f, 1.0f)
+            .Deco(SpawnableKind.Coin, C, Mi, 16f, 1.0f)
+            .Deco(SpawnableKind.Coin, C, Hi, 25f, 1.1f);
 
-        public static ChallengeSegment Climb() => Seg("Climb", 26f)
-            .Platform(C, Lo, Medium, 2f)
-            .Platform(C, Mi, Medium, 9f)
-            .Platform(C, Hi, Medium, 15f)
-            .Platform(C, Lo, Long, 21f)               // step back down so the next segment chains
-            .Deco(SpawnableKind.Coin, C, Lo, 5f, 1.0f)
-            .Deco(SpawnableKind.Coin, C, Mi, 12f, 1.0f)
-            .Deco(SpawnableKind.Coin, C, Hi, 17f, 1.1f);
+        // 4. reward - easy long platforms, a coin arc up and down
+        public static ChallengeSegment CoinRun() => Seg("Coin Run", 44f)
+            .Platform(C, Lo, Long, 3f)
+            .Platform(C, Mi, Long, 18f)
+            .Platform(C, Lo, Long, 33f)
+            .Deco(SpawnableKind.Coin, C, Lo, 6f, 0.9f)
+            .Deco(SpawnableKind.Coin, C, Lo, 9f, 1.6f)
+            .Deco(SpawnableKind.Coin, C, Mi, 15f, 1.3f)
+            .Deco(SpawnableKind.Coin, C, Mi, 20f, 1.0f)
+            .Deco(SpawnableKind.Coin, C, Mi, 25f, 1.3f)
+            .Deco(SpawnableKind.Coin, C, Lo, 31f, 1.4f)
+            .Deco(SpawnableKind.Coin, C, Lo, 34f, 0.8f);
 
-        public static ChallengeSegment Drop() => Seg("Drop", 25f)
-            .Platform(C, Lo, Short, 2f)
-            .Platform(C, Mi, Short, 8f)
-            .Platform(C, Hi, Medium, 13f)
-            .Platform(C, Lo, Long, 20f)               // the drop
-            .Deco(SpawnableKind.Coin, C, Mi, 17f, 0.9f);
+        // 5. obstacle blocks center -> go around (side platforms provided)
+        public static ChallengeSegment LowObstacle() => Seg("Low Obstacle", 48f)
+            .Platform(C, Lo, Medium, 3f)
+            .Platform(L, Lo, Medium, 15f)
+            .Platform(R, Lo, Medium, 15f)
+            .Platform(C, Lo, Medium, 27f)
+            .Platform(L, Lo, Medium, 37f)
+            .Platform(R, Lo, Medium, 37f)
+            .Platform(C, Lo, Medium, 46f)
+            .Deco(SpawnableKind.Obstacle, C, Lo, 15f, 0f)
+            .Deco(SpawnableKind.Obstacle, C, Lo, 37f, 0f);
 
-        public static ChallengeSegment RotatingObstacle() => Seg("Rotating Obstacle", 24f)
-            .Platform(C, Lo, Long, 2f)
-            .Platform(C, Lo, Medium, 19f)
-            .Deco(SpawnableKind.RotatingBar, C, Lo, 9f, 2.3f);   // overhead - only clips a mistimed jump
+        // 6. overhead rotating bar - run under it on long platforms
+        public static ChallengeSegment Rotating() => Seg("Rotating Bar", 46f)
+            .Platform(C, Lo, Long, 3f)
+            .Platform(C, Lo, Long, 22f)
+            .Platform(C, Lo, Medium, 40f)
+            .Deco(SpawnableKind.RotatingBar, C, Lo, 10f, 2.4f)
+            .Deco(SpawnableKind.RotatingBar, C, Lo, 27f, 2.4f);
 
-        public static ChallengeSegment LowObstacle() => Seg("Low Obstacle", 23f)
-            .Platform(C, Lo, Medium, 2f)
-            .Platform(L, Lo, Medium, 10f)
-            .Platform(R, Lo, Medium, 10f)
-            .Platform(C, Lo, Medium, 18f)
-            .Deco(SpawnableKind.Obstacle, C, Lo, 10f, 0f);       // blocks center -> go around
+        // 7. closing gate - time the pass through center
+        public static ChallengeSegment Gate() => Seg("Closing Gate", 48f)
+            .Platform(C, Lo, Medium, 3f)
+            .Platform(C, Lo, Long, 16f)
+            .Platform(C, Lo, Medium, 31f)
+            .Platform(C, Lo, Medium, 42f)
+            .Deco(SpawnableKind.ClosingGate, C, Lo, 16f, 0f);
 
-        public static ChallengeSegment Gate() => Seg("Closing Gate", 25f)
-            .Platform(C, Lo, Medium, 2f)
-            .Platform(C, Lo, Long, 11f)
-            .Platform(C, Lo, Medium, 20f)
-            .Deco(SpawnableKind.ClosingGate, C, Lo, 11f, 0f);    // opens / closes on a cycle - time it
+        // 8. FINAL - lane dodge + bounce climb + drop, all in one
+        public static ChallengeSegment FinalChallenge() => Seg("Final Challenge", 52f)
+            .Platform(C, Lo, Medium, 3f, SpawnableKind.BouncePad)
+            .Platform(C, Hi, Medium, 14f)
+            .Platform(R, Lo, Medium, 25f)
+            .Platform(C, Lo, Medium, 35f)
+            .Platform(L, Lo, Medium, 44f)
+            .Platform(C, Lo, Medium, 49f)
+            .Deco(SpawnableKind.Obstacle, C, Lo, 25f, 0f)   // forces the R hop after the drop
+            .Deco(SpawnableKind.Coin, C, Hi, 14f, 1.1f);
 
-        public static ChallengeSegment CoinArcUp() => Seg("Coin Arc Up", 21f)
-            .Platform(C, Lo, Medium, 2f)
-            .Platform(C, Mi, Long, 12f)
-            .Platform(C, Lo, Medium, 16f)
-            .Deco(SpawnableKind.Coin, C, Lo, 5f, 0.9f)
-            .Deco(SpawnableKind.Coin, C, Lo, 7f, 1.6f)
-            .Deco(SpawnableKind.Coin, C, Mi, 9f, 1.4f)
-            .Deco(SpawnableKind.Coin, C, Mi, 11f, 0.9f);
-
-        public static ChallengeSegment CoinArcDown() => Seg("Coin Arc Down", 21f)
-            .Platform(C, Mi, Medium, 2f)
-            .Platform(C, Lo, Long, 12f)
-            .Platform(C, Lo, Medium, 16f)
-            .Deco(SpawnableKind.Coin, C, Mi, 5f, 0.9f)
-            .Deco(SpawnableKind.Coin, C, Mi, 7f, 1.5f)
-            .Deco(SpawnableKind.Coin, C, Lo, 9f, 1.4f)
-            .Deco(SpawnableKind.Coin, C, Lo, 11f, 0.8f);
-
-        public static ChallengeSegment BounceUp() => Seg("Bounce Up", 24f)
-            .Platform(C, Lo, Medium, 2f, SpawnableKind.BouncePad)
-            .Platform(C, Hi, Medium, 11f)
-            .Platform(C, Lo, Long, 19f)
-            .Deco(SpawnableKind.Coin, C, Mi, 7f, 1.0f);
-
-        public static ChallengeSegment Finish() => Seg("Finish", 21f)
-            .Platform(C, Lo, Long, 2f)
-            .Platform(C, Lo, Long, 14f);
-
-        // --- level assembly --------------------------------------------------
-
-        /// <summary>First element is the intro; the spawner loops from index 1 after the last.</summary>
-        public static List<ChallengeSegment> PrototypeLevel() => new()
+        // -------------------------------------------------------------------
+        /// <summary>Prototype Level 1 body: intro + 7 rising-difficulty segments + final.</summary>
+        public static List<ChallengeSegment> Level01Segments() => new()
         {
-            Start(),
+            Intro(),
             ShortRun(),
             LaneChange(),
             Climb(),
-            CoinArcDown(),
+            CoinRun(),
             LowObstacle(),
-            RotatingObstacle(),
-            BounceUp(),
-            Drop(),
+            Rotating(),
             Gate(),
-            CoinArcUp(),
-            Finish(),
+            FinalChallenge(),
         };
+
+        /// <summary>Level 2 reuses the same challenge set for now (only the theme differs).</summary>
+        public static List<ChallengeSegment> Level02Segments() => Level01Segments();
     }
 }

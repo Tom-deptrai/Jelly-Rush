@@ -1,15 +1,16 @@
 using System;
+using JellyRush.Level;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace JellyRush.Core
 {
-    public enum GameState { Warmup, Running, Paused, Failed }
+    public enum GameState { Warmup, Running, Paused, Failed, Completed }
 
     /// <summary>
-    /// Owns run-level state (distance, coins, combo) and the pause / fail / retry
-    /// flow. Deliberately tiny - no shop / ads / online, per the V1 brief.
-    /// Other modules talk to it through the C# events below.
+    /// Owns run-level state (distance, coins, combo) and the pause / fail / retry /
+    /// LEVEL COMPLETE flow. Deliberately tiny - no shop / ads / online, per the V1
+    /// brief. Other modules talk to it through the C# events below.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -17,6 +18,7 @@ namespace JellyRush.Core
 
         public PrototypeConfig Config { get; private set; }
         public GameState State { get; private set; } = GameState.Warmup;
+        public LevelData CurrentLevel { get; private set; }
 
         public float DistanceMeters { get; private set; }
         public int Coins { get; private set; }
@@ -28,6 +30,9 @@ namespace JellyRush.Core
         public event Action<int> ComboChanged;
         public event Action<float> DistanceChanged;
 
+        /// <summary>Hook for the future victory animation / celebration.</summary>
+        public event Action OnLevelCompleted;
+
         float _comboTimer;
 
         public void Init(PrototypeConfig config)
@@ -36,6 +41,8 @@ namespace JellyRush.Core
             Config = config;
             State = GameState.Warmup;
         }
+
+        public void SetLevel(LevelData level) => CurrentLevel = level;
 
         void Update()
         {
@@ -57,7 +64,7 @@ namespace JellyRush.Core
 
         public void AddDistance(float meters)
         {
-            if (State == GameState.Failed) return;
+            if (State == GameState.Failed || State == GameState.Completed) return;
             DistanceMeters += meters;
             DistanceChanged?.Invoke(DistanceMeters);
         }
@@ -68,10 +75,9 @@ namespace JellyRush.Core
             CoinsChanged?.Invoke(Coins);
         }
 
-        /// <summary>Call on every successful jump to feed the (placeholder) combo meter.</summary>
         public void RegisterJump()
         {
-            if (State == GameState.Failed) return;
+            if (State == GameState.Failed || State == GameState.Completed) return;
             SetCombo(Combo + 1);
             _comboTimer = Config.comboWindow;
         }
@@ -85,10 +91,19 @@ namespace JellyRush.Core
 
         public void Fail(string reason)
         {
-            if (State == GameState.Failed) return;
+            if (State == GameState.Failed || State == GameState.Completed) return;
             Debug.Log($"[JellyRush] Fail: {reason}");
             SetCombo(0);
             SetState(GameState.Failed);
+        }
+
+        /// <summary>Player landed on the Finish Platform - stop everything, hand off to UI.</summary>
+        public void CompleteLevel()
+        {
+            if (State != GameState.Running && State != GameState.Warmup) return;
+            Debug.Log($"[JellyRush] Level complete: {(CurrentLevel != null ? CurrentLevel.levelId : "?")}  coins={Coins}");
+            SetState(GameState.Completed);
+            OnLevelCompleted?.Invoke();
         }
 
         public void TogglePause()
@@ -110,7 +125,24 @@ namespace JellyRush.Core
         public void Retry()
         {
             Time.timeScale = 1f;
+            PrototypeBootstrap.PendingLevel = CurrentLevel;   // reload the SAME level
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        }
+
+        public void LoadNextLevel()
+        {
+            Time.timeScale = 1f;
+            PrototypeBootstrap.PendingLevel = ResolveNextLevel();
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        }
+
+        LevelData ResolveNextLevel()
+        {
+            if (CurrentLevel == null) return null;
+            if (CurrentLevel.nextLevel != null) return CurrentLevel.nextLevel;
+            if (!string.IsNullOrEmpty(CurrentLevel.nextLevelId))
+                return LevelLibrary.Get(CurrentLevel.nextLevelId);
+            return CurrentLevel; // no next authored -> replay current
         }
 
         void SetState(GameState next)

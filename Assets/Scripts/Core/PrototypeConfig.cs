@@ -130,5 +130,10 @@ namespace JellyRush.Core
         public int coinValue = 1;
         [Tooltip("Seconds within which a second jump keeps the combo alive.")]
         public float comboWindow = 1.4f;
+
+        [Header("Debug (round 5)")]
+        [Tooltip("Shows the AUTO TEST button so the level can be watched hands-free. " +
+                 "Turn OFF for a real build.")]
+        public bool enableDebugAutoTest = true;
     }
 }

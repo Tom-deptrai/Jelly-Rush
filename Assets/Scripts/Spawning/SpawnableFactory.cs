@@ -23,6 +23,7 @@ namespace JellyRush.Spawning
         readonly Material _matBar;
         readonly Material _matGate;
         readonly Material _matBounce;
+        readonly Material _matFinish;
 
         public SpawnableFactory(Transform parent, WorldThemeData theme)
         {
@@ -41,6 +42,7 @@ namespace JellyRush.Spawning
             _matBar      = Mat(hazard * 0.85f + accent * 0.15f);
             _matGate     = Mat(accent * 0.6f + hazard * 0.4f);
             _matBounce   = Mat(new Color(0.30f, 0.90f, 0.55f), emissive: true);
+            _matFinish   = Mat(new Color(0.20f, 0.95f, 0.45f), emissive: true);
         }
 
         static Material Mat(Color c, bool emissive = false)
@@ -123,7 +125,7 @@ namespace JellyRush.Spawning
                     rp.transform.SetParent(g.transform, false);
                     lp.transform.localPosition = new Vector3(-2.6f, 1.1f, 0f);
                     rp.transform.localPosition = new Vector3(2.6f, 1.1f, 0f);
-                    g.AddComponent<ClosingGate>().Init(lp.transform, rp.transform, 1, 2.4f);
+                    g.AddComponent<ClosingGate>().Init(lp.transform, rp.transform, 1, 3.6f);
                     return g;
                 }
 
@@ -132,6 +134,20 @@ namespace JellyRush.Spawning
                     var g = Prim(PrimitiveType.Cube, "BouncePad_PLACEHOLDER", _matBounce,
                                  new Vector3(1.6f, 0.3f, 1.6f), true);
                     g.AddComponent<BouncePad>();
+                    return g;
+                }
+
+                case SpawnableKind.FinishPlatform:
+                {
+                    // Big bright landing pad + a tall banner wall so it reads from afar.
+                    var g = new GameObject("FinishPlatform_PLACEHOLDER");
+                    var pad = Prim(PrimitiveType.Cube, "Pad", _matFinish, new Vector3(3.4f, 0.5f, 13f), false);
+                    pad.transform.SetParent(g.transform, false);
+                    pad.transform.localPosition = new Vector3(0f, -0.25f, 0f);
+                    var wall = Prim(PrimitiveType.Cube, "Banner", _matFinish, new Vector3(7f, 4.5f, 0.4f), false);
+                    wall.transform.SetParent(g.transform, false);
+                    wall.transform.localPosition = new Vector3(0f, 2f, 6.5f);
+                    Object.Destroy(wall.GetComponent<Collider>());
                     return g;
                 }
 
