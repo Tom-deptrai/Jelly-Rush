@@ -7,10 +7,18 @@ namespace JellyRush.Player
 {
     /// <summary>
     /// The player "unit" = Jelly + carrier treated as one thing (GAMEPLAY_SPEC 3).
-    /// Handles: jump arc (modest height), lane sliding (smooth, never teleport),
-    /// visual lean, and full acceptance of rapid input. Tapping while airborne
-    /// queues the next hop so no tap is ever dropped and the motion stays fluid.
-    /// Rendering / squash-stretch reactions live in <see cref="PlayerVisuals"/>.
+    ///
+    /// Jump model is velocity + gravity (not a fixed-length arc), so every valid
+    /// Tap can start a NEW jump beat immediately - even mid-air - by re-launching
+    /// from the current height. No queue, no minimum interval between taps: the
+    /// faster the player taps, the more continuous the jump chain
+    /// (GAMEPLAY_SPEC 1 & 4). Y stays continuous (only vertical velocity changes),
+    /// so there is no teleport and no positional snap.
+    ///
+    /// Lane sliding is a smooth SmoothDamp toward the target lane X and is fully
+    /// independent of the jump, so a swipe changes lane AND fires a jump beat at
+    /// once, on the ground or in the air. Rendering / squash-stretch reactions
+    /// live in <see cref="PlayerVisuals"/>.
     /// </summary>
     public class PlayerController : MonoBehaviour
     {
@@ -25,14 +33,25 @@ namespace JellyRush.Player
         float _laneXVel;            // SmoothDamp velocity
         int _targetLane = LaneSystem.Center;
 
+        float _y;                   // current height above the lane floor
+        float _vy;                  // vertical velocity
         bool _airborne;
-        float _jumpT;               // 0..jumpDuration
-        float _jumpHeightScale = 1f;
-        int _queuedJumps;
-        const int MaxQueuedJumps = 2;
 
         public int CurrentLane => _currentLane;
         public bool IsAirborne => _airborne;
+
+        /// <summary>Gravity from the "reference" jump: apex = jumpHeight at jumpDuration/2. g = 8h / T^2.</summary>
+        float Gravity
+        {
+            get
+            {
+                float t = Mathf.Max(0.05f, _cfg.jumpDuration);
+                return 8f * Mathf.Max(0.01f, _cfg.jumpHeight) / (t * t);
+            }
+        }
+
+        /// <summary>Take-off velocity for a reference-height hop. v0 = g * T / 2.</summary>
+        float LaunchVelocity => Gravity * Mathf.Max(0.05f, _cfg.jumpDuration) * 0.5f;
 
         public void Configure(PrototypeConfig cfg, LaneSystem lanes, GameManager game,
                               SwipeTapInput input, PlayerVisuals visuals)
@@ -45,7 +64,9 @@ namespace JellyRush.Player
 
             _lanes.Configure(cfg.laneSpacing);
             _laneX = _lanes.LaneToX(_currentLane);
-            ApplyPosition(_cfg.groundY);
+            _y = _cfg.groundY;
+            _vy = 0f;
+            ApplyPosition();
 
             _input.Gesture += OnGesture;
         }
@@ -64,47 +85,50 @@ namespace JellyRush.Player
             {
                 case GestureType.SwipeLeft:
                     _targetLane = _lanes.Step(_targetLane, -1);
-                    RequestJump();
                     _visuals?.OnLaneChange(-1);
+                    Beat(1f);                 // lane change also fires a jump beat now
                     break;
                 case GestureType.SwipeRight:
                     _targetLane = _lanes.Step(_targetLane, +1);
-                    RequestJump();
                     _visuals?.OnLaneChange(+1);
+                    Beat(1f);
                     break;
                 case GestureType.Tap:
-                    RequestJump();
+                    Beat(1f);
                     break;
             }
         }
 
-        void RequestJump()
+        /// <summary>
+        /// Start a new jump beat right now. Works whether grounded or airborne - it
+        /// (re)sets the upward velocity from the current height, so Y stays
+        /// continuous (no teleport). This is the whole "rapid tap = continuous
+        /// chain". A normal mid-air beat is scaled down as the pair nears
+        /// <see cref="PrototypeConfig.airChainCeiling"/> so a fast chain plateaus
+        /// instead of flying skyward; bounce pads (heightScale &gt; 1) ignore that.
+        /// </summary>
+        void Beat(float heightScale)
         {
-            if (!_airborne)
-            {
-                StartJump(1f);
-            }
-            else if (_queuedJumps < MaxQueuedJumps)
-            {
-                _queuedJumps++;               // rapid tap: honoured on landing
-            }
-        }
+            float full = LaunchVelocity * Mathf.Sqrt(Mathf.Max(0.01f, heightScale));
 
-        void StartJump(float heightScale)
-        {
+            if (_airborne && heightScale <= 1f && _cfg.airChainCeiling > 0f)
+            {
+                float headroom = Mathf.Max(0f, _cfg.airChainCeiling - _y);
+                float capped = Mathf.Sqrt(2f * Gravity * headroom);
+                _vy = Mathf.Min(full, capped);
+            }
+            else
+            {
+                _vy = full;
+            }
+
             _airborne = true;
-            _jumpT = 0f;
-            _jumpHeightScale = heightScale;
             _game.RegisterJump();
             _visuals?.OnJump(heightScale);
         }
 
-        /// <summary>External trigger (bounce pad).</summary>
-        public void ForceBounce()
-        {
-            StartJump(_cfg.bouncePadMultiplier);
-            _queuedJumps = 0;
-        }
+        /// <summary>External trigger (bounce pad) - a stronger beat.</summary>
+        public void ForceBounce() => Beat(_cfg.bouncePadMultiplier);
 
         void Update()
         {
@@ -113,50 +137,41 @@ namespace JellyRush.Player
 
             float dt = Time.deltaTime;
 
-            // --- lane slide (smooth) -----------------------------------------
+            // --- lane slide (smooth, independent of jump) -------------------
             _currentLane = _targetLane;
             float targetX = _lanes.LaneToX(_targetLane);
             _laneX = Mathf.SmoothDamp(_laneX, targetX, ref _laneXVel,
                                      Mathf.Max(0.02f, _cfg.laneChangeDuration));
 
-            // --- jump arc ---------------------------------------------------
-            float y = _cfg.groundY;
+            // --- vertical integration (velocity + gravity) -----------------
             if (_airborne)
             {
-                _jumpT += dt;
-                float dur = Mathf.Max(0.05f, _cfg.jumpDuration);
-                float n = _jumpT / dur;
-                if (n >= 1f)
+                _vy -= Gravity * dt;
+                _y += _vy * dt;
+
+                if (_y <= _cfg.groundY && _vy <= 0f)
                 {
+                    _y = _cfg.groundY;
+                    _vy = 0f;
                     _airborne = false;
-                    y = _cfg.groundY;
-                    if (_queuedJumps > 0)
-                    {
-                        _queuedJumps--;
-                        StartJump(1f);
-                        y = _cfg.groundY;
-                    }
-                    else
-                    {
-                        _visuals?.OnLand();
-                    }
-                }
-                else
-                {
-                    y = _cfg.groundY + Mathf.Sin(n * Mathf.PI) * _cfg.jumpHeight * _jumpHeightScale;
+                    _visuals?.OnLand();
                 }
             }
+            else
+            {
+                _y = _cfg.groundY;
+            }
 
-            ApplyPosition(y);
+            ApplyPosition();
 
             // --- visual lean toward the lane we are sliding to --------------
-            float lean = Mathf.Clamp((_laneXVel) / _cfg.laneSpacing, -1f, 1f);
+            float lean = Mathf.Clamp(_laneXVel / _cfg.laneSpacing, -1f, 1f);
             _visuals?.SetLean(-lean * _cfg.laneLeanAngle);
         }
 
-        void ApplyPosition(float y)
+        void ApplyPosition()
         {
-            transform.position = new Vector3(_laneX, y, _cfg.playerZ);
+            transform.position = new Vector3(_laneX, _y, _cfg.playerZ);
         }
     }
 }

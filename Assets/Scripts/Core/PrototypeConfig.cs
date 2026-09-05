@@ -67,8 +67,15 @@ namespace JellyRush.Core
         public float jumpHeight = 1.7f;
         [Tooltip("Time from take-off to landing for a normal jump.")]
         public float jumpDuration = 0.42f;
-        [Tooltip("Extra height multiplier for a bounce pad.")]
+        [Tooltip("Extra height multiplier for a bounce pad (bypasses the air-chain ceiling).")]
         public float bouncePadMultiplier = 2.1f;
+
+        [Tooltip("Soft height ceiling for a rapid-tap jump chain. Each mid-air Tap " +
+                 "still fires a new beat immediately, but its power is scaled down as " +
+                 "the pair nears this height, so a fast chain rises then plateaus " +
+                 "instead of flying to the sky (CAMERA spec section 2 & 10). A single " +
+                 "ground jump is unaffected because its apex is below this.")]
+        public float airChainCeiling = 2.7f;
         [Tooltip("Resting height of the player unit above the lane floor.")]
         public float groundY = 0f;
 

@@ -107,3 +107,6 @@ InitTestScene*.unity*
 
 # Prototype smoke-test artifacts
 /prototype_playmode.png
+
+# macOS
+.DS_Store
