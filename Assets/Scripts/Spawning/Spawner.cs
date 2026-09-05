@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using JellyRush.Core;
 using JellyRush.Lanes;
+using JellyRush.Level;
 using JellyRush.Spawnables;
 using JellyRush.World;
 using UnityEngine;
@@ -8,15 +9,13 @@ using UnityEngine;
 namespace JellyRush.Spawning
 {
     /// <summary>
-    /// Round 2 test spawner: platform-to-platform, no continuous ground.
-    ///
-    /// Every slot drops exactly ONE landable platform (short / medium / long) in
-    /// some lane, with gaps of open space between slots. A guaranteed long start
-    /// platform sits under the player, and the visible pipeline is pre-filled at
-    /// Configure() so platforms keep arriving from the depth (CAMERA spec 6) the
-    /// moment the world starts scrolling. Light decoration (coin, side obstacle,
-    /// bounce pad, rare rotating bar / closing gate) never removes the landable
-    /// platform for that slot - no unfair situations.
+    /// Round 3: streams a level made of hand-authored <see cref="ChallengeSegment"/>s
+    /// instead of random slots. Each segment's platforms / decos are emitted far
+    /// ahead (CAMERA spec 6) and parented under the world root so they travel toward
+    /// the camera. Platforms carry a lane (X) AND a tier (Y) from <see cref="HeightGrid"/>.
+    /// A guaranteed start platform sits under the player and the visible pipeline is
+    /// pre-filled so there is always a reachable platform. The level loops (from the
+    /// segment after Start) so playtests keep going.
     /// </summary>
     public class Spawner : MonoBehaviour
     {
@@ -24,31 +23,36 @@ namespace JellyRush.Spawning
         GameManager _game;
         WorldScroller _world;
         LaneSystem _lanes;
+        HeightGrid _heights;
         SpawnableFactory _factory;
 
         readonly List<GameObject> _live = new();
         readonly Dictionary<SpawnableKind, Stack<GameObject>> _pool = new();
 
-        float _nextSpawnDistance;
-        const float FirstSlotDistance = 9f;   // metres ahead where the first gap-platform sits
+        List<ChallengeSegment> _level;
+        int _segIndex;
+        float _nextSegmentDistance;      // travel distance at which the next segment's START reaches the player
+        const int LoopFromIndex = 1;     // skip the intro when looping
 
-        public void Configure(PrototypeConfig cfg, GameManager game, WorldScroller world, LaneSystem lanes)
+        public void Configure(PrototypeConfig cfg, GameManager game, WorldScroller world,
+                              LaneSystem lanes, HeightGrid heights, WorldThemeData theme)
         {
             _cfg = cfg;
             _game = game;
             _world = world;
             _lanes = lanes;
-            _factory = new SpawnableFactory(world.WorldRoot);
+            _heights = heights;
+            _factory = new SpawnableFactory(world.WorldRoot, theme);
+            _level = SegmentLibrary.PrototypeLevel();
 
             SpawnStartPlatform();
 
-            // Pre-fill the pipeline so there is always a platform to reach.
-            _nextSpawnDistance = FirstSlotDistance;
-            while (_nextSpawnDistance <= _cfg.spawnAheadDistance)
-            {
-                SpawnSlot(_nextSpawnDistance);
-                _nextSpawnDistance += NextInterval();
-            }
+            // Pre-fill the pipeline: keep emitting whole segments until the front of
+            // the queue is past the spawn-ahead distance.
+            _segIndex = 0;
+            _nextSegmentDistance = 6f;
+            while (_nextSegmentDistance <= _cfg.spawnAheadDistance)
+                EmitNextSegment();
         }
 
         void Update()
@@ -59,95 +63,95 @@ namespace JellyRush.Spawning
             Recycle();
             if (_game.State == GameState.Warmup) return;
 
-            while (_world.DistanceTravelled + _cfg.spawnAheadDistance >= _nextSpawnDistance)
-            {
-                SpawnSlot(_nextSpawnDistance);
-                _nextSpawnDistance += NextInterval();
-            }
+            while (_world.DistanceTravelled + _cfg.spawnAheadDistance >= _nextSegmentDistance)
+                EmitNextSegment();
         }
 
-        float NextInterval() => Mathf.Max(3f,
-            _cfg.spawnIntervalMeters + Random.Range(-_cfg.spawnIntervalJitter, _cfg.spawnIntervalJitter));
+        void EmitNextSegment()
+        {
+            var seg = _level[_segIndex];
+            EmitSegment(seg, _nextSegmentDistance);
+            _nextSegmentDistance += Mathf.Max(6f, seg.length);
 
-        /// <summary>localZ under the world root for something that reaches the player at DistanceTravelled == atDistance.</summary>
-        float SpawnLocalZ(float atDistance) => _cfg.playerZ + atDistance;
+            _segIndex++;
+            if (_segIndex >= _level.Count)
+                _segIndex = Mathf.Min(LoopFromIndex, _level.Count - 1);
+        }
+
+        void EmitSegment(ChallengeSegment seg, float atDistance)
+        {
+            foreach (var p in seg.platforms) PlacePlatform(p, atDistance);
+            foreach (var d in seg.decos) PlaceDeco(d, atDistance);
+        }
+
+        // --- placement -----------------------------------------------------
+
+        float LocalZ(float distance) => _cfg.playerZ + distance;
+
+        float LengthZ(PlatformLength len) => len switch
+        {
+            PlatformLength.Short => _cfg.platformShortZ,
+            PlatformLength.Long => _cfg.platformLongZ,
+            _ => _cfg.platformMediumZ,
+        };
 
         void SpawnStartPlatform()
         {
             var go = Rent(SpawnableKind.Platform);
             go.transform.SetParent(_world.WorldRoot, false);
             go.transform.localScale = new Vector3(2.0f, 0.5f, _cfg.startPlatformZ);
-            // extends from just behind the player to a good way ahead
+            float top = _cfg.startHeight;
             float centreZ = _cfg.playerZ + _cfg.startPlatformZ * 0.5f - 6f;
-            go.transform.localPosition = new Vector3(_lanes.LaneToX(LaneSystem.Center), -0.25f, centreZ);
+            go.transform.localPosition = new Vector3(_lanes.LaneToX(LaneSystem.Center), top - 0.25f, centreZ);
+            go.transform.localRotation = Quaternion.identity;
             go.SetActive(true);
             _live.Add(go);
         }
 
-        void SpawnSlot(float atDistance)
+        void PlacePlatform(PlatformStep s, float atDistance)
         {
-            float z = SpawnLocalZ(atDistance);
-            bool gentle = atDistance < FirstSlotDistance + 22f;
+            var go = Rent(s.kind);
+            go.transform.SetParent(_world.WorldRoot, false);
+            float x = _lanes.LaneToX(_lanes.ClampLane(s.lane));
+            float topY = _heights.TierToY(s.tier);
+            float z = LocalZ(atDistance + s.z);
 
-            int lane = gentle ? LaneSystem.Center : Random.Range(0, LaneSystem.LaneCount);
-
-            float lengthZ;
-            SpawnableKind platformKind = SpawnableKind.Platform;
-            if (gentle)
+            if (s.kind == SpawnableKind.BouncePad)
             {
-                lengthZ = _cfg.platformLongZ;
+                go.transform.localScale = Vector3.one;
+                go.transform.localPosition = new Vector3(x, topY + 0.15f, z);
             }
             else
             {
-                float r = Random.value;
-                lengthZ = r < 0.4f ? _cfg.platformShortZ
-                        : r < 0.8f ? _cfg.platformMediumZ
-                        : _cfg.platformLongZ;
-                if (Random.value < 0.12f) platformKind = SpawnableKind.MovingPlatform;
+                go.transform.localScale = new Vector3(1.9f, 0.4f, LengthZ(s.length));
+                go.transform.localPosition = new Vector3(x, topY - 0.2f, z);
             }
-
-            PlacePlatform(platformKind, lane, z, lengthZ);
-
-            if (gentle) return;
-
-            // --- light decoration on top of / beside the landable platform ---
-            float d = Random.value;
-            if (d < 0.35f)
-                Place(SpawnableKind.Coin, lane, z, yOffset: 1.2f);
-            else if (d < 0.50f)
-                Place(SpawnableKind.BouncePad, lane, z, yOffset: 0.55f);
-            else if (d < 0.62f)
-            {
-                int sideLane = (lane + 1 + Random.Range(0, 2)) % LaneSystem.LaneCount;
-                if (sideLane != lane) Place(SpawnableKind.Obstacle, sideLane, z, yOffset: 0.2f);
-            }
-            else if (d < 0.68f)
-                Place(SpawnableKind.RotatingBar, lane, z, yOffset: 1.7f);
-            else if (d < 0.72f)
-                Place(SpawnableKind.ClosingGate, lane, z);
-        }
-
-        void PlacePlatform(SpawnableKind kind, int lane, float localZ, float lengthZ)
-        {
-            var go = Rent(kind);
-            go.transform.SetParent(_world.WorldRoot, false);
-            go.transform.localScale = new Vector3(1.9f, 0.4f, lengthZ);
-            go.transform.localPosition = new Vector3(_lanes.LaneToX(lane), -0.2f, localZ);
             go.transform.localRotation = Quaternion.identity;
             go.SetActive(true);
+
             if (go.TryGetComponent<MovingPlatform>(out var mp))
                 mp.Init(0.8f, 1.0f, Random.value * Mathf.PI * 2f);
+
             _live.Add(go);
         }
 
-        void Place(SpawnableKind kind, int lane, float localZ, float yOffset = 0f)
+        void PlaceDeco(DecoStep s, float atDistance)
         {
-            var go = Rent(kind);
+            var go = Rent(s.kind);
             go.transform.SetParent(_world.WorldRoot, false);
-            go.transform.localPosition = new Vector3(_lanes.LaneToX(lane), 0.2f + yOffset, localZ);
+            float x = _lanes.LaneToX(_lanes.ClampLane(s.lane));
+            float y = _heights.TierToY(s.tier) + s.yOffset + DecoBaseY(s.kind);
+            go.transform.localPosition = new Vector3(x, y, LocalZ(atDistance + s.z));
             go.SetActive(true);
             _live.Add(go);
         }
+
+        static float DecoBaseY(SpawnableKind kind) => kind switch
+        {
+            SpawnableKind.Coin => 0.45f,       // floats above the surface
+            SpawnableKind.Obstacle => 0.75f,   // base sits on the tier
+            _ => 0f,
+        };
 
         GameObject Rent(SpawnableKind kind)
         {

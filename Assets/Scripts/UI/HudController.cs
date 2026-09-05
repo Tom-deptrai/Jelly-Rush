@@ -63,7 +63,7 @@ namespace JellyRush.UI
         void Update()
         {
             if (_player != null && _debug != null)
-                _debug.text = $"beats: {_player.BeatsLeft}   {(_player.IsAirborne ? "air" : "grounded")}";
+                _debug.text = $"beats {_player.BeatsLeft}/4   {(_player.IsAirborne ? "air" : "on platform")}   supportY {_player.SupportY:0.0}";
         }
 
         void OnState(GameState s)

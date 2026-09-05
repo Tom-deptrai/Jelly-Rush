@@ -1,15 +1,21 @@
 using JellyRush.Spawnables;
+using JellyRush.World;
 using UnityEngine;
 
 namespace JellyRush.Spawning
 {
     /// <summary>
-    /// Builds PLACEHOLDER primitives for every gameplay element. One place to swap
-    /// for real prefabs later - gameplay code only ever asks for a SpawnableKind.
+    /// Turns a <see cref="SpawnableKind"/> into a GameObject. If the active
+    /// <see cref="WorldThemeData"/> supplies a prefab for that function it is
+    /// instantiated (so each world can look completely different); otherwise a
+    /// tinted primitive PLACEHOLDER is built using the theme palette. Gameplay code
+    /// never knows which happened.
     /// </summary>
     public class SpawnableFactory
     {
         readonly Transform _parent;
+        readonly WorldThemeData _theme;
+
         readonly Material _matPlatform;
         readonly Material _matMoving;
         readonly Material _matCoin;
@@ -18,15 +24,22 @@ namespace JellyRush.Spawning
         readonly Material _matGate;
         readonly Material _matBounce;
 
-        public SpawnableFactory(Transform parent)
+        public SpawnableFactory(Transform parent, WorldThemeData theme)
         {
             _parent = parent;
-            _matPlatform = Mat(new Color(0.95f, 0.86f, 0.62f));
-            _matMoving   = Mat(new Color(0.98f, 0.70f, 0.35f));
-            _matCoin     = Mat(new Color(1.00f, 0.85f, 0.15f), emissive: true);
-            _matObstacle = Mat(new Color(0.90f, 0.25f, 0.28f));
-            _matBar      = Mat(new Color(0.75f, 0.20f, 0.55f));
-            _matGate     = Mat(new Color(0.55f, 0.35f, 0.85f));
+            _theme = theme;
+
+            Color platform = theme != null ? theme.platformColor : new Color(0.95f, 0.86f, 0.62f);
+            Color accent   = theme != null ? theme.accentColor   : new Color(0.98f, 0.70f, 0.35f);
+            Color hazard   = theme != null ? theme.hazardColor   : new Color(0.90f, 0.25f, 0.28f);
+            Color coin     = theme != null ? theme.coinColor     : new Color(1.00f, 0.85f, 0.15f);
+
+            _matPlatform = Mat(platform);
+            _matMoving   = Mat(accent);
+            _matCoin     = Mat(coin, emissive: true);
+            _matObstacle = Mat(hazard);
+            _matBar      = Mat(hazard * 0.85f + accent * 0.15f);
+            _matGate     = Mat(accent * 0.6f + hazard * 0.4f);
             _matBounce   = Mat(new Color(0.30f, 0.90f, 0.55f), emissive: true);
         }
 
@@ -48,70 +61,83 @@ namespace JellyRush.Spawning
             go.name = name;
             go.transform.localScale = scale;
             go.GetComponent<Renderer>().sharedMaterial = mat;
-            var col = go.GetComponent<Collider>();
-            col.isTrigger = trigger;
+            go.GetComponent<Collider>().isTrigger = trigger;
             return go;
         }
 
         public GameObject Create(SpawnableKind kind)
         {
-            GameObject root;
+            var prefab = _theme != null ? _theme.PrefabFor(kind) : null;
+            GameObject root = prefab != null ? Object.Instantiate(prefab) : BuildPlaceholder(kind);
+
+            var tag = root.GetComponent<SpawnableTag>() ?? root.AddComponent<SpawnableTag>();
+            tag.SetKind(kind);
+            root.transform.SetParent(_parent, false);
+            return root;
+        }
+
+        GameObject BuildPlaceholder(SpawnableKind kind)
+        {
             switch (kind)
             {
                 case SpawnableKind.Platform:
-                    root = Prim(PrimitiveType.Cube, "Platform", _matPlatform, new Vector3(1.7f, 0.4f, 2.6f), false);
-                    break;
+                    return Prim(PrimitiveType.Cube, "Platform_PLACEHOLDER", _matPlatform,
+                               new Vector3(1.9f, 0.4f, 2.6f), false);
 
                 case SpawnableKind.MovingPlatform:
-                    root = Prim(PrimitiveType.Cube, "MovingPlatform", _matMoving, new Vector3(1.6f, 0.4f, 2.4f), false);
-                    root.AddComponent<MovingPlatform>();
-                    break;
+                {
+                    var g = Prim(PrimitiveType.Cube, "MovingPlatform_PLACEHOLDER", _matMoving,
+                                 new Vector3(1.7f, 0.4f, 2.4f), false);
+                    g.AddComponent<MovingPlatform>();
+                    return g;
+                }
 
                 case SpawnableKind.Coin:
-                    root = Prim(PrimitiveType.Cylinder, "Coin", _matCoin, new Vector3(0.55f, 0.06f, 0.55f), true);
-                    root.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                    root.AddComponent<CoinSpin>();
-                    break;
+                {
+                    var g = Prim(PrimitiveType.Cylinder, "Coin_PLACEHOLDER", _matCoin,
+                                 new Vector3(0.55f, 0.06f, 0.55f), true);
+                    g.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                    g.AddComponent<CoinSpin>();
+                    return g;
+                }
 
                 case SpawnableKind.Obstacle:
-                    root = Prim(PrimitiveType.Cube, "Obstacle", _matObstacle, new Vector3(1.5f, 1.6f, 0.5f), true);
-                    break;
+                    return Prim(PrimitiveType.Cube, "Obstacle_PLACEHOLDER", _matObstacle,
+                               new Vector3(1.5f, 1.5f, 0.5f), true);
 
                 case SpawnableKind.RotatingBar:
-                    root = new GameObject("RotatingBar");
+                {
+                    var g = new GameObject("RotatingBar_PLACEHOLDER");
                     var bar = Prim(PrimitiveType.Cube, "Bar", _matBar, new Vector3(4.6f, 0.4f, 0.4f), true);
-                    bar.transform.SetParent(root.transform, false);
-                    root.AddComponent<RotatingBar>().Init(120f);
-                    break;
+                    bar.transform.SetParent(g.transform, false);
+                    g.AddComponent<RotatingBar>().Init(120f);
+                    return g;
+                }
 
                 case SpawnableKind.ClosingGate:
-                    root = new GameObject("ClosingGate");
-                    var frame = Prim(PrimitiveType.Cube, "Frame", _matGate, new Vector3(0.3f, 2.4f, 0.3f), false);
-                    frame.transform.SetParent(root.transform, false);
-                    frame.transform.localScale = new Vector3(7f, 0.25f, 0.3f);
-                    frame.transform.localPosition = new Vector3(0f, 1.4f, 0f);
+                {
+                    var g = new GameObject("ClosingGate_PLACEHOLDER");
                     var lp = Prim(PrimitiveType.Cube, "LeftPanel", _matGate, new Vector3(2.0f, 2.2f, 0.35f), true);
                     var rp = Prim(PrimitiveType.Cube, "RightPanel", _matGate, new Vector3(2.0f, 2.2f, 0.35f), true);
-                    lp.transform.SetParent(root.transform, false);
-                    rp.transform.SetParent(root.transform, false);
+                    lp.transform.SetParent(g.transform, false);
+                    rp.transform.SetParent(g.transform, false);
                     lp.transform.localPosition = new Vector3(-2.6f, 1.1f, 0f);
                     rp.transform.localPosition = new Vector3(2.6f, 1.1f, 0f);
-                    root.AddComponent<ClosingGate>().Init(lp.transform, rp.transform, 1, 2.4f);
-                    break;
+                    g.AddComponent<ClosingGate>().Init(lp.transform, rp.transform, 1, 2.4f);
+                    return g;
+                }
 
                 case SpawnableKind.BouncePad:
-                    root = Prim(PrimitiveType.Cube, "BouncePad", _matBounce, new Vector3(1.5f, 0.25f, 1.5f), true);
-                    root.AddComponent<BouncePad>();
-                    break;
+                {
+                    var g = Prim(PrimitiveType.Cube, "BouncePad_PLACEHOLDER", _matBounce,
+                                 new Vector3(1.6f, 0.3f, 1.6f), true);
+                    g.AddComponent<BouncePad>();
+                    return g;
+                }
 
                 default:
-                    root = Prim(PrimitiveType.Cube, "Unknown", _matPlatform, Vector3.one, false);
-                    break;
+                    return Prim(PrimitiveType.Cube, "Unknown", _matPlatform, Vector3.one, false);
             }
-
-            root.AddComponent<SpawnableTag>().SetKind(kind);
-            root.transform.SetParent(_parent, false);
-            return root;
         }
     }
 }

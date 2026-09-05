@@ -24,13 +24,18 @@ namespace JellyRush.Core
     {
         [SerializeField] PrototypeConfig _config = new();
 
+        [Tooltip("Optional: a authored World Theme asset. When empty a placeholder " +
+                 "theme is built at runtime from PrototypeConfig.startingTheme.")]
+        [SerializeField] JellyRush.World.WorldThemeData _themeAsset;
+
         public PrototypeConfig Config => _config;
 
         void Awake()
         {
-            // Field initializers hold the V1 defaults. If the scene stored an empty
-            // config (older/partial serialization) fall back to a fresh one.
-            if (_config == null || _config.jumpDuration <= 0f)
+            // Field initializers hold the current defaults. If the scene stored an
+            // empty or pre-round-3 config, fall back to a fresh one.
+            if (_config == null || _config.jumpDuration <= 0f ||
+                _config.heightTiers == null || _config.heightTiers.Length == 0)
                 _config = new PrototypeConfig();
 
             Screen.orientation = ScreenOrientation.Portrait;
@@ -39,6 +44,11 @@ namespace JellyRush.Core
 
             var game = gameObject.AddComponent<GameManager>();
             game.Init(_config);
+
+            // --- world theme (round 3): palette + per-function prefab set --------
+            var theme = _themeAsset != null
+                ? _themeAsset
+                : WorldThemeLibrary.Get(_config.startingTheme);
 
             BuildLighting();
 
@@ -49,12 +59,14 @@ namespace JellyRush.Core
             var scroller = new GameObject("WorldScroller").AddComponent<WorldScroller>();
             scroller.Configure(_config, game, worldRoot);
 
-            BuildAbyss(scroller);
+            BuildAbyss(scroller, theme);
             BuildLaneRails();
 
-            // --- lanes --------------------------------------------------------
+            // --- lanes + height tiers --------------------------------------
             var lanes = new GameObject("LaneSystem").AddComponent<LaneSystem>();
             lanes.Configure(_config.laneSpacing);
+            var heights = new GameObject("HeightGrid").AddComponent<HeightGrid>();
+            heights.Configure(_config.heightTiers);
 
             // --- player unit -------------------------------------------------
             var player = BuildPlayer(out var visuals, out var collisions);
@@ -71,11 +83,11 @@ namespace JellyRush.Core
             camGo.tag = "MainCamera";
             camGo.AddComponent<AudioListener>();
             var rig = camGo.AddComponent<DepthCameraRig>();
-            rig.Configure(_config, player.transform);
+            rig.Configure(_config, player.transform, theme.skyColor);
 
-            // --- spawner ---------------------------------------------------
+            // --- spawner (segment streamer) -------------------------------
             var spawner = new GameObject("Spawner").AddComponent<Spawner>();
-            spawner.Configure(_config, game, scroller, lanes);
+            spawner.Configure(_config, game, scroller, lanes, heights, theme);
 
             // --- UI --------------------------------------------------------
             EnsureEventSystem();
@@ -101,20 +113,21 @@ namespace JellyRush.Core
             RenderSettings.ambientLight = new Color(0.55f, 0.58f, 0.65f);
         }
 
-        void BuildAbyss(WorldScroller scroller)
+        void BuildAbyss(WorldScroller scroller, JellyRush.World.WorldThemeData theme)
         {
-            // Round 2: NO continuous ground. This plane sits far BELOW the fail line
-            // (config.failY) purely as a distant moving backdrop so a fall reads and
+            // NO continuous ground. This plane sits far BELOW the relative fail
+            // distance, purely as a distant moving backdrop so a fall reads and
             // depth still has motion. It has no collider - it can never be landed on.
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
             floor.name = "AbyssBackdrop";
             floor.transform.localScale = new Vector3(3f, 1f, 45f);
-            floor.transform.position = new Vector3(0f, _config.failY - 6f, _config.playerZ + 210f);
+            float y = _config.startHeight - _config.failDropBelowSupport - 8f;
+            floor.transform.position = new Vector3(0f, y, _config.playerZ + 210f);
             var rend = floor.GetComponent<Renderer>();
             var shader = Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit");
             var mat = new Material(shader);
-            var tex = ScrollingFloor.BuildGrid(128,
-                new Color(0.30f, 0.34f, 0.42f), new Color(0.22f, 0.25f, 0.32f));
+            Color deep = Color.Lerp(theme.skyColor, Color.black, 0.6f);
+            var tex = ScrollingFloor.BuildGrid(128, deep, Color.Lerp(deep, Color.black, 0.4f));
             mat.mainTexture = tex;
             mat.mainTextureScale = new Vector2(4f, 150f);
             rend.material = mat;
@@ -137,7 +150,7 @@ namespace JellyRush.Core
                 var rail = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 rail.name = $"LaneRail_{lane}";
                 rail.transform.localScale = new Vector3(0.06f, 0.02f, 420f);
-                rail.transform.position = new Vector3(x, -0.34f, _config.playerZ + 200f);
+                rail.transform.position = new Vector3(x, _config.startHeight - 0.34f, _config.playerZ + 200f);
                 var rr = rail.GetComponent<Renderer>();
                 rr.sharedMaterial = railMat;
                 rr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -149,7 +162,7 @@ namespace JellyRush.Core
         PlayerController BuildPlayer(out PlayerVisuals visuals, out PlayerCollisions collisions)
         {
             var root = new GameObject("PlayerUnit");
-            root.transform.position = new Vector3(0f, _config.groundY, _config.playerZ);
+            root.transform.position = new Vector3(0f, _config.startHeight, _config.playerZ);
 
             var rb = root.AddComponent<Rigidbody>();
             rb.isKinematic = true;
