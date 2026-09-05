@@ -182,7 +182,7 @@ namespace JellyRush.Spawning
 
         static float DecoBaseY(SpawnableKind kind) => kind switch
         {
-            SpawnableKind.Coin => 0.95f,       // floats above the pair's body, never buried inside it
+            SpawnableKind.Coin => 0.6f,        // ends up above the head; grabbed on the frequent jumps
             SpawnableKind.Obstacle => 0.75f,   // box base sits on the tier
             _ => 0f,
         };

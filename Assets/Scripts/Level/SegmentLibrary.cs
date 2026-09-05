@@ -77,12 +77,14 @@ namespace JellyRush.Level
             .Deco(SpawnableKind.Obstacle, C, Lo, 15f, 0f)
             .Deco(SpawnableKind.Obstacle, C, Lo, 39f, 0f);
 
-        public static ChallengeSegment Rotating() => Seg("Rotating Bar", 50f)
+        public static ChallengeSegment Rotating() => Seg("Rotating Bar", 52f)
             .Platform(C, Lo, Long, 3f)
-            .Platform(C, Lo, Long, 24f)
-            .Platform(C, Lo, Medium, 44f)
-            .Deco(SpawnableKind.RotatingBar, C, Lo, 12f, 2.5f)   // overhead - a grounded run is safe
-            .Deco(SpawnableKind.RotatingBar, C, Lo, 32f, 2.5f);
+            .Platform(C, Lo, Medium, 15f)
+            .Platform(C, Lo, Long, 26f)
+            .Platform(C, Lo, Medium, 38f)
+            .Platform(C, Lo, Medium, 47f)
+            .Deco(SpawnableKind.RotatingBar, C, Lo, 9f, 2.9f)    // overhead - a grounded run is safe
+            .Deco(SpawnableKind.RotatingBar, C, Lo, 32f, 2.9f);
 
         public static ChallengeSegment BounceUp() => Seg("Bounce Up", 48f)
             .Platform(C, Lo, Long, 3f)
@@ -94,19 +96,20 @@ namespace JellyRush.Level
 
         public static ChallengeSegment Gate() => Seg("Closing Gate", 52f)
             .Platform(C, Lo, Medium, 3f)
-            .Platform(C, Lo, Long, 16f)
-            .Platform(C, Lo, Medium, 34f)
-            .Platform(C, Lo, Medium, 45f)
-            .Deco(SpawnableKind.ClosingGate, C, Lo, 16f, 0f);
+            .Platform(C, Lo, Long, 14f)
+            .Platform(C, Lo, Long, 28f)
+            .Platform(C, Lo, Medium, 41f)
+            .Platform(C, Lo, Medium, 48f)
+            .Deco(SpawnableKind.ClosingGate, C, Lo, 14f, 0f);
 
-        public static ChallengeSegment FinalChallenge() => Seg("Final Challenge", 58f)
+        public static ChallengeSegment FinalChallenge() => Seg("Final Challenge", 56f)
             .Platform(C, Lo, Medium, 3f)
-            .Platform(C, Mi, Medium, 15f)
-            .Platform(R, Mi, Medium, 27f)          // lane only
-            .Platform(R, Hi, Long, 39f)            // tier only
-            .Platform(C, Mi, Medium, 50f)          // down + lane
-            .Platform(C, Lo, Long, 54f)
-            .Deco(SpawnableKind.Coin, R, Hi, 39f, 1.1f);
+            .Platform(C, Mi, Medium, 14f)
+            .Platform(C, Hi, Long, 25f)
+            .Platform(C, Mi, Medium, 37f)
+            .Platform(C, Lo, Medium, 47f)
+            .Platform(C, Lo, Long, 52f)
+            .Deco(SpawnableKind.Coin, C, Hi, 25f, 1.1f);
 
         // -------------------------------------------------------------------
         public static List<ChallengeSegment> Level01Segments() => new()

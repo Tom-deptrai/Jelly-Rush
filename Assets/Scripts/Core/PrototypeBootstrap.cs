@@ -183,10 +183,12 @@ namespace JellyRush.Core
 
             // Hitbox for coin / hazard / bounce detection. Sized to hug the visual
             // body; landing does NOT use this (it uses a Landable-only raycast).
+            // Tight to the body so a normal single hop passes UNDER an overhead
+            // rotating bar; coins float above the head and are grabbed on jumps.
             var trigger = root.AddComponent<SphereCollider>();
             trigger.isTrigger = true;
-            trigger.radius = 0.72f;
-            trigger.center = new Vector3(0f, 0.66f, 0f);
+            trigger.radius = 0.45f;
+            trigger.center = new Vector3(0f, 0.52f, 0f);
 
             var controller = root.AddComponent<PlayerController>();
             collisions = root.AddComponent<PlayerCollisions>();

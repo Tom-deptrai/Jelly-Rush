@@ -56,8 +56,8 @@ namespace JellyRush.Spawnables
         [SerializeField] Transform _rightPanel;
         int _safeLane = 1;
         float _cycle = 3.6f;
-        float _openX = 2.6f;
-        float _closedX = 0.55f;
+        float _openX = 2.7f;
+        float _closedX = 1.6f;   // panels never reach the safe (centre) lane
 
         public void Init(Transform left, Transform right, int safeLane, float cycleSeconds)
         {
@@ -76,10 +76,11 @@ namespace JellyRush.Spawnables
             if (_rightPanel != null) _rightPanel.localPosition = new Vector3(x, _rightPanel.localPosition.y, 0f);
         }
 
+        /// <summary>The centre (safe) lane is never blocked; the side lanes close on the cycle.</summary>
         public bool BlocksPlayerNow(int lane)
         {
-            if (Closed01 > 0.9f) return true;       // slammed shut
-            return lane != _safeLane;               // only the safe lane is clear
+            if (lane == _safeLane) return false;
+            return Closed01 > 0.25f;
         }
     }
 
