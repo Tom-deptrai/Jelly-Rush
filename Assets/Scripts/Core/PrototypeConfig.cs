@@ -104,9 +104,9 @@ namespace JellyRush.Core
         [Tooltip("Height above a platform top within which a falling player latches on.")]
         public float landSnap = 0.4f;
         [Tooltip("Z length of short / medium / long platforms.")]
-        public float platformShortZ = 2.4f;
-        public float platformMediumZ = 4.4f;
-        public float platformLongZ = 8f;
+        public float platformShortZ = 2.8f;
+        public float platformMediumZ = 5.5f;
+        public float platformLongZ = 10f;
         [Tooltip("Z length of the guaranteed starting platform under the player.")]
         public float startPlatformZ = 24f;
 

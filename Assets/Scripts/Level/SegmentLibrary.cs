@@ -103,13 +103,13 @@ namespace JellyRush.Level
             .Deco(SpawnableKind.ClosingGate, C, Lo, 16f, 0f);
 
         // 8. FINAL - lane dodge + bounce climb + drop, all in one
-        public static ChallengeSegment FinalChallenge() => Seg("Final Challenge", 52f)
+        public static ChallengeSegment FinalChallenge() => Seg("Final Challenge", 54f)
             .Platform(C, Lo, Medium, 3f, SpawnableKind.BouncePad)
             .Platform(C, Hi, Medium, 14f)
             .Platform(R, Lo, Medium, 25f)
             .Platform(C, Lo, Medium, 35f)
             .Platform(L, Lo, Medium, 44f)
-            .Platform(C, Lo, Medium, 49f)
+            .Platform(C, Lo, Long, 50f)                     // comfortable base to reach the Finish
             .Deco(SpawnableKind.Obstacle, C, Lo, 25f, 0f)   // forces the R hop after the drop
             .Deco(SpawnableKind.Coin, C, Hi, 14f, 1.1f);
 

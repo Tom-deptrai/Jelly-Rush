@@ -34,7 +34,7 @@ namespace JellyRush.Level
 
         [Header("Finish")]
         [Tooltip("Empty space (metres) after the last segment before the Finish Platform.")]
-        public float finishRunwayZ = 26f;
+        public float finishRunwayZ = 9f;
         public int finishLane = 1;   // 0 L / 1 C / 2 R
         public int finishTier = 0;   // HeightGrid tier
 
