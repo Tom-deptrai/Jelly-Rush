@@ -75,8 +75,8 @@ namespace JellyRush.Player
 
             _lanes.Configure(cfg.laneSpacing);
             _laneX = _lanes.LaneToX(_currentLane);
-            _y = cfg.startHeight;
             _supportY = cfg.startHeight;
+            _y = cfg.startHeight + cfg.playerFootClearance;
             _chainBaseY = cfg.startHeight;
             _vy = 0f;
             _airborne = false;
@@ -181,8 +181,8 @@ namespace JellyRush.Player
             {
                 if (over && Mathf.Abs(surfaceY - _supportY) <= 0.75f)
                 {
-                    _supportY = surfaceY;         // ride the platform (incl. small tier wobble)
-                    _y = surfaceY;
+                    _supportY = surfaceY;                              // ride the platform
+                    _y = surfaceY + _cfg.playerFootClearance;          // foot rests just above the surface
                 }
                 else
                 {
@@ -199,10 +199,10 @@ namespace JellyRush.Player
 
         void Land(float surfaceY, bool isFinish)
         {
-            _y = surfaceY;
+            _supportY = surfaceY;
+            _y = surfaceY + _cfg.playerFootClearance;   // foot just above the real surface
             _vy = 0f;
             _airborne = false;
-            _supportY = surfaceY;
             _chainBaseY = surfaceY;
             _beatsLeft = Mathf.Max(1, _cfg.maxAirJumpBeats);
             _visuals?.OnLand();
@@ -215,27 +215,22 @@ namespace JellyRush.Player
         }
 
         /// <summary>
-        /// Raycast down for a landable surface under the current lane X: a normal
-        /// Platform, a MovingPlatform, or the FinishPlatform (isFinish = true).
+        /// Raycast straight down under the current lane X, restricted to the
+        /// LANDABLE layer - a coin / hazard / decoration can never be a surface.
+        /// surfaceY is the real collider top; isFinish flags the Finish Platform.
         /// </summary>
         bool TryGetPlatformBelow(out float surfaceY, out bool isFinish)
         {
             surfaceY = 0f;
             isFinish = false;
-            Vector3 origin = new Vector3(_laneX, _y + 0.6f, _cfg.playerZ);
+            Vector3 origin = new Vector3(_laneX, _y + 0.7f, _cfg.playerZ);
             if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 40f,
-                                ~0, QueryTriggerInteraction.Ignore))
+                                GameLayers.LandableMask, QueryTriggerInteraction.Ignore))
             {
+                surfaceY = hit.point.y;
                 var tag = hit.collider.GetComponentInParent<SpawnableTag>();
-                if (tag != null &&
-                    (tag.Kind == SpawnableKind.Platform ||
-                     tag.Kind == SpawnableKind.MovingPlatform ||
-                     tag.Kind == SpawnableKind.FinishPlatform))
-                {
-                    surfaceY = hit.point.y;
-                    isFinish = tag.Kind == SpawnableKind.FinishPlatform;
-                    return true;
-                }
+                isFinish = tag != null && tag.Kind == SpawnableKind.FinishPlatform;
+                return true;
             }
             return false;
         }

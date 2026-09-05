@@ -93,6 +93,12 @@ namespace JellyRush.Core
                  "1 = Mid, 2 = High. Invisible to the player - no drawn floors.")]
         public float[] heightTiers = { 0f, 1.6f, 3.2f };
 
+        [Header("Player foot point (round 6)")]
+        [Tooltip("The PlayerUnit root IS the foot point. When grounded the foot rests " +
+                 "this tiny distance above the platform surface (avoids z-fighting). " +
+                 "ALL player visuals must sit entirely at localY >= 0.")]
+        public float playerFootClearance = 0.03f;
+
         [Header("Platforms / fall (round 3 - no fixed ground)")]
         [Tooltip("Y of the starting platform (the Low tier).")]
         public float startHeight = 0f;

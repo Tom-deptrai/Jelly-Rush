@@ -52,6 +52,11 @@ namespace JellyRush.Core
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
 
+            // The kinematic player only needs raycasts against LANDABLE - never a
+            // physical collision with a platform - so silence that pair.
+            if (GameLayers.PlayerLayer >= 0 && GameLayers.LandableLayer >= 0)
+                Physics.IgnoreLayerCollision(GameLayers.PlayerLayer, GameLayers.LandableLayer, true);
+
             var game = gameObject.AddComponent<GameManager>();
             game.Init(_config);
 
@@ -111,9 +116,10 @@ namespace JellyRush.Core
             var spawner = new GameObject("Spawner").AddComponent<Spawner>();
             spawner.Configure(_config, game, scroller, lanes, heights, theme, level);
 
-            // --- debug auto-test bot -------------------------------------
+            // --- debug auto-test bot (follows the authored route) -------
+            var route = LevelRoute.Build(level, _config);
             var bot = new GameObject("AutoPlayBot").AddComponent<AutoPlayBot>();
-            bot.Configure(_config, game, player, input, spawner, lanes, heights, scroller);
+            bot.Configure(_config, game, player, input, spawner, lanes, heights, scroller, route);
 
             // --- UI --------------------------------------------------------
             EnsureEventSystem();
@@ -154,46 +160,60 @@ namespace JellyRush.Core
 
         PlayerController BuildPlayer(out PlayerVisuals visuals, out PlayerCollisions collisions)
         {
+            // COORDINATE CONVENTION (round 6):
+            //   PlayerUnit.position  = the FOOT POINT (bottom of the pair).
+            //   When grounded, PlayerUnit.y = platform surface + playerFootClearance.
+            //   EVERY visual sits at localY >= 0, so nothing ever dips through a surface.
+            //
+            //   PlayerUnit                 foot point; PlayerController, PlayerCollisions,
+            //     |                        kinematic Rigidbody, trigger SphereCollider (hitbox)
+            //     Visual                   PlayerVisuals; local (0,0,0)
+            //       LeanPivot              tilt about the foot on lane change
+            //         Carrier_PLACEHOLDER  bottom at localY 0  -> small animal carrier
+            //         JellyAnchor
+            //           Jelly_PLACEHOLDER  sits on the carrier  -> blue Jelly mascot
+            //             Face_PLACEHOLDER faces the camera (-Z)
             var root = new GameObject("PlayerUnit");
-            root.transform.position = new Vector3(0f, _config.startHeight, _config.playerZ);
+            root.transform.position = new Vector3(0f, _config.startHeight + _config.playerFootClearance, _config.playerZ);
+            if (GameLayers.PlayerLayer >= 0) root.layer = GameLayers.PlayerLayer;
 
             var rb = root.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
+
+            // Hitbox for coin / hazard / bounce detection. Sized to hug the visual
+            // body; landing does NOT use this (it uses a Landable-only raycast).
             var trigger = root.AddComponent<SphereCollider>();
             trigger.isTrigger = true;
-            trigger.radius = 0.55f;
-            trigger.center = new Vector3(0f, 0.55f, 0f);
+            trigger.radius = 0.72f;
+            trigger.center = new Vector3(0f, 0.66f, 0f);
 
             var controller = root.AddComponent<PlayerController>();
             collisions = root.AddComponent<PlayerCollisions>();
 
-            // PLACEHOLDER hierarchy - real art swaps in at the marked nodes:
-            //   LeanPivot                 (tilt on lane change)
-            //     Carrier_PLACEHOLDER     -> small animal carrier, long axis into depth
-            //       JellyAnchor           (where the mascot rides)
-            //         Jelly_PLACEHOLDER   -> blue Jelly robot mascot (visual focus, on top)
-            //           Face_PLACEHOLDER  -> keeps a "face" turned toward the camera (-Z)
-            var leanPivot = new GameObject("LeanPivot").transform;
-            leanPivot.SetParent(root.transform, false);
+            var visual = new GameObject("Visual").transform;
+            visual.SetParent(root.transform, false);
 
-            var carrier = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            var leanPivot = new GameObject("LeanPivot").transform;
+            leanPivot.SetParent(visual, false);
+
+            var carrier = GameObject.CreatePrimitive(PrimitiveType.Cube);
             carrier.name = "Carrier_PLACEHOLDER";
             carrier.transform.SetParent(leanPivot, false);
-            carrier.transform.localScale = new Vector3(0.55f, 0.7f, 0.55f);
-            carrier.transform.localPosition = new Vector3(0f, 0.42f, 0f);
-            carrier.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // long axis -> depth
+            carrier.transform.localScale = new Vector3(1.0f, 0.5f, 1.5f);   // long axis -> depth
+            carrier.transform.localPosition = new Vector3(0f, 0.25f, 0f);   // bottom exactly at foot (localY 0)
             Tint(carrier, new Color(0.92f, 0.58f, 0.34f));
             Object.Destroy(carrier.GetComponent<Collider>());
 
             var jellyAnchor = new GameObject("JellyAnchor").transform;
             jellyAnchor.SetParent(leanPivot, false);
-            jellyAnchor.localPosition = new Vector3(0f, 1.0f, -0.05f);
+            jellyAnchor.localPosition = new Vector3(0f, 0.5f, -0.1f);       // on top of the carrier
 
             var jelly = GameObject.CreatePrimitive(PrimitiveType.Cube);
             jelly.name = "Jelly_PLACEHOLDER";
             jelly.transform.SetParent(jellyAnchor, false);
-            jelly.transform.localScale = new Vector3(0.85f, 0.8f, 0.8f);
+            jelly.transform.localScale = new Vector3(0.9f, 0.85f, 0.85f);
+            jelly.transform.localPosition = new Vector3(0f, 0.425f, 0f);    // bottom sits on the carrier top
             var jellyRenderer = jelly.GetComponent<Renderer>();
             Tint(jelly, new Color(0.30f, 0.60f, 0.95f));
             Object.Destroy(jelly.GetComponent<Collider>());
@@ -201,9 +221,9 @@ namespace JellyRush.Core
             var face = GameObject.CreatePrimitive(PrimitiveType.Quad);
             face.name = "Face_PLACEHOLDER";
             face.transform.SetParent(jelly.transform, false);
-            face.transform.localPosition = new Vector3(0f, 0.08f, -0.52f); // toward camera
+            face.transform.localPosition = new Vector3(0f, 0.05f, -0.52f);  // toward camera
             face.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            face.transform.localScale = new Vector3(0.66f, 0.46f, 1f);
+            face.transform.localScale = new Vector3(0.7f, 0.5f, 1f);
             Tint(face, new Color(0.96f, 0.98f, 1f));
             Object.Destroy(face.GetComponent<Collider>());
 

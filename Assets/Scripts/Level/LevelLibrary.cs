@@ -30,9 +30,9 @@ namespace JellyRush.Level
             d.levelId = Level01Id;
             d.worldThemeId = WorldThemeId.ToyWorkshop;
             d.targetDurationSeconds = 60f;
-            d.startScrollSpeed = 6.5f;
-            d.maxScrollSpeed = 9f;
-            d.scrollAcceleration = 0.05f;
+            d.startScrollSpeed = 7f;
+            d.maxScrollSpeed = 10f;
+            d.scrollAcceleration = 0.06f;
             d.segments = SegmentLibrary.Level01Segments();
             d.finishRunwayZ = 9f;
             d.finishLane = 1;

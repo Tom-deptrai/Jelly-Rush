@@ -143,6 +143,15 @@ namespace JellyRush.Spawning
 
             if (s.kind == SpawnableKind.BouncePad)
             {
+                // a short landing platform so the pair can touch down, then bounce
+                var pad = Rent(SpawnableKind.Platform);
+                pad.transform.SetParent(_world.WorldRoot, false);
+                pad.transform.localScale = new Vector3(1.9f, 0.4f, LengthZ(PlatformLength.Short));
+                pad.transform.localPosition = new Vector3(x, topY - 0.2f, z);
+                pad.transform.localRotation = Quaternion.identity;
+                pad.SetActive(true);
+                _live.Add(pad);
+
                 go.transform.localScale = Vector3.one;
                 go.transform.localPosition = new Vector3(x, topY + 0.15f, z);
             }
@@ -173,8 +182,8 @@ namespace JellyRush.Spawning
 
         static float DecoBaseY(SpawnableKind kind) => kind switch
         {
-            SpawnableKind.Coin => 0.45f,
-            SpawnableKind.Obstacle => 0.75f,
+            SpawnableKind.Coin => 0.95f,       // floats above the pair's body, never buried inside it
+            SpawnableKind.Obstacle => 0.75f,   // box base sits on the tier
             _ => 0f,
         };
 

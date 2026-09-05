@@ -1,3 +1,4 @@
+using JellyRush.Core;
 using JellyRush.Spawnables;
 using JellyRush.World;
 using UnityEngine;
@@ -74,6 +75,7 @@ namespace JellyRush.Spawning
 
             var tag = root.GetComponent<SpawnableTag>() ?? root.AddComponent<SpawnableTag>();
             tag.SetKind(kind);
+            GameLayers.SetRecursively(root, GameLayers.LayerForKind(kind));
             root.transform.SetParent(_parent, false);
             return root;
         }

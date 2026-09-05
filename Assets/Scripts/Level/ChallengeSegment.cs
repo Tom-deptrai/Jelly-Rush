@@ -15,12 +15,13 @@ namespace JellyRush.Level
         public PlatformLength length;
         public SpawnableKind kind;       // Platform / MovingPlatform / BouncePad
         public float z;                  // metres from the segment start
+        public bool offRoute;            // true = an alternative platform, not on the Auto Test route
 
         public PlatformStep(int lane, int tier, PlatformLength length, float z,
-                            SpawnableKind kind = SpawnableKind.Platform)
+                            SpawnableKind kind = SpawnableKind.Platform, bool offRoute = false)
         {
             this.lane = lane; this.tier = tier; this.length = length;
-            this.z = z; this.kind = kind;
+            this.z = z; this.kind = kind; this.offRoute = offRoute;
         }
     }
 
@@ -67,6 +68,14 @@ namespace JellyRush.Level
                                          SpawnableKind kind = SpawnableKind.Platform)
         {
             platforms.Add(new PlatformStep(lane, tier, len, z, kind));
+            return this;
+        }
+
+        /// <summary>An alternative platform (spawned, but NOT on the Auto Test route).</summary>
+        public ChallengeSegment AltPlatform(int lane, int tier, PlatformLength len, float z,
+                                            SpawnableKind kind = SpawnableKind.Platform)
+        {
+            platforms.Add(new PlatformStep(lane, tier, len, z, kind, offRoute: true));
             return this;
         }
 

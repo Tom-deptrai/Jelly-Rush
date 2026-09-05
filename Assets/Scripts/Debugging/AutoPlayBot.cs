@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using JellyRush.Core;
 using JellyRush.InputSystem;
 using JellyRush.Lanes;
+using JellyRush.Level;
 using JellyRush.Player;
 using JellyRush.Spawnables;
 using JellyRush.Spawning;
@@ -10,17 +12,18 @@ using UnityEngine;
 namespace JellyRush.Debugging
 {
     /// <summary>
-    /// DEBUG-ONLY Auto Test bot (round 5). When <see cref="Active"/> it plays the
-    /// level hands-free so a level can be watched end to end without a mouse.
+    /// DEBUG-ONLY Auto Test bot (round 6). It FOLLOWS THE AUTHORED ROUTE
+    /// (<see cref="LevelRoute"/>) - it knows the intended platform sequence, so it
+    /// never has to guess. For each route step it: aligns the lane, times a jump so
+    /// the descent meets the platform as it arrives, adds climb beats if the tier
+    /// is higher, and waits out a closing gate.
     ///
-    /// It is NOT a smart AI and it does NOT cheat: it looks a short way ahead,
-    /// picks the next landable platform, and drives the pair through the SAME
-    /// <see cref="SwipeTapInput.Simulate"/> path a human tap/swipe uses - so all
-    /// jump / lane / 4-beat / gravity rules apply exactly. No teleporting, no
-    /// passing through obstacles. It can still fail; that is fine.
+    /// It does NOT cheat: every move goes through <see cref="SwipeTapInput.Simulate"/>
+    /// so the real jump / lane / 4-beat / gravity / landing rules all apply. No
+    /// teleport, no direct position set, no fake beats, no phasing obstacles.
     ///
-    /// Gated by <see cref="PrototypeConfig.enableDebugAutoTest"/> (the button is
-    /// only built when that is true).
+    /// On Fail it logs the exact route step + player state (never silent).
+    /// Gated by <see cref="PrototypeConfig.enableDebugAutoTest"/>.
     /// </summary>
     public class AutoPlayBot : MonoBehaviour
     {
@@ -32,10 +35,16 @@ namespace JellyRush.Debugging
         LaneSystem _lanes;
         HeightGrid _heights;
         WorldScroller _world;
+        List<RouteStep> _route;
 
         bool _active;
+        bool _loggedFail;
         float _decisionTimer;
-        const float DecisionInterval = 0.09f;
+        int _routeIndex;
+        const float DecisionInterval = 0.06f;
+
+        public int RouteIndex => _routeIndex;
+        public int RouteLength => _route != null ? _route.Count : 0;
 
         public bool Active
         {
@@ -44,12 +53,13 @@ namespace JellyRush.Debugging
             {
                 _active = value;
                 if (_input != null) _input.SuppressUserInput = value;
+                if (value) _loggedFail = false;
             }
         }
 
         public void Configure(PrototypeConfig cfg, GameManager game, PlayerController player,
                               SwipeTapInput input, Spawner spawner, LaneSystem lanes,
-                              HeightGrid heights, WorldScroller world)
+                              HeightGrid heights, WorldScroller world, List<RouteStep> route)
         {
             _cfg = cfg;
             _game = game;
@@ -59,14 +69,20 @@ namespace JellyRush.Debugging
             _lanes = lanes;
             _heights = heights;
             _world = world;
+            _route = route;
         }
 
         void Update()
         {
-            if (!_active || _cfg == null) return;
+            if (!_active || _cfg == null || _route == null) return;
 
             var st = _game.State;
             if (st == GameState.Warmup) { _input.Simulate(GestureType.Tap); return; }
+            if (st == GameState.Failed)
+            {
+                if (!_loggedFail) { LogFail(); _loggedFail = true; }
+                return;
+            }
             if (st != GameState.Running) return;
 
             _decisionTimer -= Time.deltaTime;
@@ -78,96 +94,106 @@ namespace JellyRush.Debugging
 
         void Decide()
         {
-            float pz = _cfg.playerZ;
+            if (_routeIndex >= _route.Count) return;
+
+            RouteStep t = _route[_routeIndex];
+            float d = _world.DistanceTravelled;
+            float speed = Mathf.Max(3f, _world.CurrentSpeed);
+            float dz = t.arriveDistance - d;                 // world-Z of the target platform centre
             int lane = _player.TargetLane;
             bool grounded = _player.Grounded;
             float py = _player.Y;
             float vy = _player.VerticalVelocity;
             float supY = _player.SupportY;
+            float tierY = _heights.TierToY(t.tier);
+            float climb = tierY - supY;
 
-            // --- scan the pipeline ---------------------------------------
-            GameObject next = null;
-            float nextFrontZ = float.MaxValue, nextTopY = 0f;
-            int nextLane = LaneSystem.Center;
-            float curBackZ = float.MinValue;
-            bool gateBlocks = false;
-
-            foreach (var go in _spawner.LiveObjects)
+            // --- advance the route index once we are on / past this target ------
+            bool onTarget = grounded && Mathf.Abs(supY - tierY) < 0.45f
+                            && dz < t.widthZ * 0.5f + 0.7f && dz > -t.widthZ * 0.5f - 2.5f;
+            bool passed = dz < -t.widthZ * 0.5f - 2f;
+            if (onTarget || passed)
             {
-                if (go == null || !go.activeSelf) continue;
-                var tag = go.GetComponent<SpawnableTag>();
-                if (tag == null) continue;
-
-                var col = go.GetComponentInChildren<Collider>();
-                if (col == null) continue;
-                var b = col.bounds;
-                float frontZ = b.center.z - b.extents.z;
-                float backZ = b.center.z + b.extents.z;
-                int goLane = LaneFromX(b.center.x);
-
-                switch (tag.Kind)
-                {
-                    case SpawnableKind.Platform:
-                    case SpawnableKind.MovingPlatform:
-                    case SpawnableKind.BouncePad:
-                    case SpawnableKind.FinishPlatform:
-                        // platform we are currently standing on
-                        if (grounded && goLane == lane &&
-                            frontZ <= pz + 0.4f && backZ >= pz - 0.4f &&
-                            Mathf.Abs(b.max.y - supY) < 1.1f)
-                            curBackZ = Mathf.Max(curBackZ, backZ);
-
-                        // the next platform strictly ahead
-                        if (frontZ > pz + 0.2f && frontZ < nextFrontZ)
-                        {
-                            next = go; nextFrontZ = frontZ; nextTopY = b.max.y; nextLane = goLane;
-                        }
-                        break;
-
-                    case SpawnableKind.ClosingGate:
-                        if (frontZ > pz - 1f && frontZ - pz < 7f &&
-                            go.TryGetComponent<ClosingGate>(out var gate) && gate.BlocksPlayerNow(lane))
-                            gateBlocks = true;
-                        break;
-                }
-            }
-
-            if (next == null) return; // nothing to aim for yet
-
-            float dz = nextFrontZ - pz;
-
-            // --- 1. get into the target lane ---------------------------------
-            if (lane != nextLane && dz < 13f)
-            {
-                _input.Simulate(nextLane < lane ? GestureType.SwipeLeft : GestureType.SwipeRight);
+                _routeIndex++;
                 return;
             }
-            if (lane != nextLane) return; // too far to commit the lane change yet
 
-            // --- 2. same lane: jump timing / climb -------------------------
-            float climb = nextTopY - supY;
-            float jumpTriggerZ = _world.CurrentSpeed * 0.6f + 2.6f + Mathf.Max(0f, climb) * 0.8f;
+            bool gateWait = GateBlocking(lane, dz);
+
+            // --- 1. lane alignment -------------------------------------------
+            if (lane != t.lane)
+            {
+                float commitZ = t.widthZ * 0.5f + speed * (climb < -0.4f ? 0.55f : 0.85f) + 2.5f;
+                if (dz < commitZ && !gateWait)
+                    _input.Simulate(t.lane < lane ? GestureType.SwipeLeft : GestureType.SwipeRight);
+                return;
+            }
+
+            // --- 2. jump timing + climb -------------------------------------
+            float g = 8f * Mathf.Max(0.01f, _cfg.jumpHeight) / (_cfg.jumpDuration * _cfg.jumpDuration);
+            float v0 = g * _cfg.jumpDuration * 0.5f;
+            float airtime;
+            if (climb <= 0.1f)
+            {
+                float drop = -climb;
+                airtime = (v0 + Mathf.Sqrt(v0 * v0 + 2f * g * drop)) / g;
+            }
+            else
+            {
+                airtime = _cfg.jumpDuration * (1f + climb / Mathf.Max(0.5f, _cfg.airChainCeiling) * 1.3f);
+            }
+            float jumpLeadZ = speed * airtime * 0.92f + t.widthZ * 0.28f + 0.7f;
 
             if (grounded)
             {
-                if (gateBlocks) return; // wait for the gate to open
-                bool aboutToFall = (curBackZ - pz) < 2.2f;
-                bool inRange = dz <= jumpTriggerZ;
-                if (aboutToFall || inRange)
+                if (gateWait) return;
+                bool aboutToFall = PrevTrailingDz(d) < 1.5f;
+                if (dz <= jumpLeadZ || aboutToFall)
                     _input.Simulate(GestureType.Tap);
             }
             else
             {
-                // climb assist: still below the target and no longer rising hard
-                if (py < nextTopY - 0.15f && vy < 2.0f && _player.BeatsLeft > 0)
-                    _input.Simulate(GestureType.Tap);
+                if (lane != t.lane && _player.BeatsLeft > 0)
+                    _input.Simulate(t.lane < lane ? GestureType.SwipeLeft : GestureType.SwipeRight);
+                else if (py < tierY - 0.02f && vy < 2.2f && _player.BeatsLeft > 0)
+                    _input.Simulate(GestureType.Tap);   // need more height to reach the tier
             }
         }
 
-        int LaneFromX(float x)
+        float PrevTrailingDz(float d)
         {
-            float spacing = Mathf.Max(0.1f, _lanes.LaneSpacing);
-            return _lanes.ClampLane(Mathf.RoundToInt(x / spacing) + LaneSystem.Center);
+            if (_routeIndex == 0)
+                return (_cfg.startPlatformZ - 6f) - d;   // trailing edge of the start platform
+            RouteStep p = _route[_routeIndex - 1];
+            return (p.arriveDistance + p.widthZ * 0.5f) - d;
+        }
+
+        bool GateBlocking(int lane, float dzToTarget)
+        {
+            var live = _spawner.LiveObjects;
+            for (int i = 0; i < live.Count; i++)
+            {
+                var go = live[i];
+                if (go == null || !go.activeSelf) continue;
+                var tag = go.GetComponent<SpawnableTag>();
+                if (tag == null || tag.Kind != SpawnableKind.ClosingGate) continue;
+
+                float gz = go.transform.position.z;
+                if (gz > -1.5f && gz < 9f && gz < dzToTarget + 4f &&
+                    go.TryGetComponent<ClosingGate>(out var gate) && gate.BlocksPlayerNow(lane))
+                    return true;
+            }
+            return false;
+        }
+
+        void LogFail()
+        {
+            string target = _routeIndex < _route.Count ? _route[_routeIndex].ToString() : "(past end)";
+            Debug.LogWarning(
+                $"[AutoTest FAIL] routeStep {_routeIndex}/{_route.Count}  target={{{target}}}\n" +
+                $"  player: lane={_player.CurrentLane} grounded={_player.Grounded} y={_player.Y:F2} " +
+                $"vy={_player.VerticalVelocity:F2} supportY={_player.SupportY:F2} beats={_player.BeatsLeft}\n" +
+                $"  world: distance={_world.DistanceTravelled:F1} speed={_world.CurrentSpeed:F1}");
         }
     }
 }

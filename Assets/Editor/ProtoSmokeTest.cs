@@ -6,25 +6,28 @@ using UnityEngine;
 namespace JellyRush.EditorTools
 {
     /// <summary>
-    /// Batch-mode smoke test: opens the prototype scene, enters Play Mode for a few
-    /// seconds, injects a couple of synthetic jumps, screenshots the Game view and
-    /// exits non-zero if anything logged an error/exception.
-    /// Run:  Unity -batchmode -projectPath . -executeMethod JellyRush.EditorTools.ProtoSmokeTest.Run
+    /// Headless acceptance harness (round 6): opens the prototype scene, enters Play
+    /// Mode with deterministic 60 fps stepping, turns the Auto Test bot ON, and runs
+    /// until the bot either reaches GameState.Completed (PASS) or Fails / times out.
+    ///
+    ///   Unity -batchmode -projectPath . -executeMethod JellyRush.EditorTools.ProtoSmokeTest.Run
+    ///
+    /// Exit 0 = a full level-01 run Start -> Finish -> Completed.
+    /// Exit 1 = Failed / red error.  Exit 2 = timed out.
     /// </summary>
     public static class ProtoSmokeTest
     {
         static int _frames;
         static readonly List<string> _errors = new();
         static string _shotPath;
+        static bool _done;
 
-        static float _prevY;
-        static float _maxYStep;         // biggest single-frame Y move (teleport detector)
-        static float _maxY;
-        static int _beatsSeen;
+        const int TimeoutFrames = 90 * 60;   // 90 s of level time
 
         public static void Run()
         {
-            _shotPath = System.IO.Path.Combine(Directory(), "prototype_playmode.png");
+            _shotPath = System.IO.Path.Combine(
+                System.IO.Path.GetDirectoryName(Application.dataPath), "prototype_playmode.png");
 
             Application.logMessageReceived += OnLog;
 
@@ -35,31 +38,16 @@ namespace JellyRush.EditorTools
             EditorSceneManager.OpenScene("Assets/Scenes/Prototype.unity");
             EditorApplication.update += Tick;
             EditorApplication.EnterPlaymode();
-            // Advance the player loop one frame per editor tick so headless timing
-            // is deterministic (batch mode otherwise runs Update only sporadically).
             EditorApplication.isPaused = true;
         }
 
-        static string Directory()
-        {
-            var p = Application.dataPath;              // <proj>/Assets
-            return System.IO.Path.GetDirectoryName(p);
-        }
-
-        static readonly string[] IgnoreStackContains =
-        {
-            "QuickSearch", "SearchDatabase", "SearchInit", "SearchService"
-        };
+        static readonly string[] IgnoreStack = { "QuickSearch", "SearchDatabase", "SearchInit", "SearchService" };
 
         static void OnLog(string condition, string stack, LogType type)
         {
-            if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert)
-                return;
-
-            string s = stack ?? string.Empty;
-            foreach (var frag in IgnoreStackContains)
-                if (s.Contains(frag)) return;   // editor-internal noise, not our game
-
+            if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert) return;
+            string s = stack ?? "";
+            foreach (var f in IgnoreStack) if (s.Contains(f)) return;
             _errors.Add($"{type}: {condition}\n{stack}");
         }
 
@@ -67,80 +55,70 @@ namespace JellyRush.EditorTools
 
         static void Tick()
         {
-            if (_inTick) return;                 // Step() can re-pump editor updates
-            if (!EditorApplication.isPlaying) return;
+            if (_inTick || _done || !EditorApplication.isPlaying) return;
             _inTick = true;
             try { TickBody(); } finally { _inTick = false; }
         }
 
         static void TickBody()
         {
-
-            // Deterministic 60 fps stepping so headless play matches on-device timing.
             Time.captureDeltaTime = 1f / 60f;
             if (!EditorApplication.isPaused) EditorApplication.isPaused = true;
-
             _frames++;
 
-            // Round 5: hand the level to the Auto Test bot and let it drive.
-            if (_frames == 15) EnableAutoBot();
+            if (_frames == 8) EnableBot();
 
-            // advance exactly one engine frame
             EditorApplication.Step();
 
-            TrackPlayer();
+            var gm = JellyRush.Core.GameManager.Instance;
+            var bot = Object.FindAnyObjectByType<JellyRush.Debugging.AutoPlayBot>();
 
-            if (_frames == 120)
-                CaptureCameraToFile();
+            if (_frames % 600 == 0 && gm != null)
+                Debug.Log($"[ProtoSmokeTest] t={_frames / 60f:F0}s state={gm.State} " +
+                          $"dist={gm.DistanceMeters:F0} coins={gm.Coins} " +
+                          $"route={(bot != null ? bot.RouteIndex : -1)}/{(bot != null ? bot.RouteLength : -1)}");
 
-            const int LastFrame = 1500;   // ~25 s of deterministic play - not a full run
-            if (_frames >= LastFrame)
-            {
-                EditorApplication.update -= Tick;
-                Time.captureDeltaTime = 0f;
+            if (_frames == 120) Capture();
 
-                float launchStep = 16.5f / 60f;
-                if (_maxYStep > launchStep * 2.2f)
-                    _errors.Add($"Y teleport suspected: max single-frame Y move = {_maxYStep:F3}");
-
-                var gm = JellyRush.Core.GameManager.Instance;
-                string st = gm != null ? gm.State.ToString() : "?";
-                float dist = gm != null ? gm.DistanceMeters : 0f;
-                if (gm != null && dist < 40f)
-                    _errors.Add($"Auto bot made no progress: distance={dist:F1} state={st}");
-
-                bool ok = _errors.Count == 0;
-                Debug.Log($"[ProtoSmokeTest] frames={_frames} errors={_errors.Count} ok={ok} " +
-                          $"state={st} distance={dist:F0} coins={(gm != null ? gm.Coins : 0)} " +
-                          $"maxY={_maxY:F2} maxYStep={_maxYStep:F3} bestCombo={_beatsSeen}");
-                foreach (var e in _errors) Debug.LogWarning("[ProtoSmokeTest] " + e);
-                EditorApplication.isPlaying = false;
-                EditorApplication.Exit(ok ? 0 : 1);
-            }
+            if (gm != null && gm.State == JellyRush.Core.GameState.Completed)
+                Finish(0, $"PASS - level complete in {_frames / 60f:F1}s, coins={gm.Coins}", bot, gm);
+            else if (gm != null && gm.State == JellyRush.Core.GameState.Failed)
+                Finish(1, "FAIL - bot could not complete the level", bot, gm);
+            else if (_frames >= TimeoutFrames)
+                Finish(2, $"TIMEOUT after {_frames / 60f:F0}s", bot, gm);
         }
 
-        static void TrackPlayer()
+        static void Finish(int code, string msg, JellyRush.Debugging.AutoPlayBot bot, JellyRush.Core.GameManager gm)
         {
-            var pc = Object.FindAnyObjectByType<JellyRush.Player.PlayerController>();
-            if (pc == null) return;
+            _done = true;
+            EditorApplication.update -= Tick;
+            Time.captureDeltaTime = 0f;
 
-            float y = pc.transform.position.y;
-            _maxY = Mathf.Max(_maxY, y);
-            if (_frames == 55 || _frames == 120 || _frames == 240)
-                Debug.Log($"[ProtoSmokeTest] f{_frames} y={y:F3} airborne={pc.IsAirborne}");
-            if (_frames > 3 && Time.deltaTime <= 0.05f)
-                _maxYStep = Mathf.Max(_maxYStep, Mathf.Abs(y - _prevY));
-            _prevY = y;
+            if (_errors.Count > 0 && code == 0) code = 1;
 
-            if (JellyRush.Core.GameManager.Instance != null)
-                _beatsSeen = Mathf.Max(_beatsSeen, JellyRush.Core.GameManager.Instance.BestCombo);
+            Capture();
+            Debug.Log($"[ProtoSmokeTest] {msg}");
+            Debug.Log($"[ProtoSmokeTest] errors={_errors.Count} " +
+                      $"route={(bot != null ? bot.RouteIndex : -1)}/{(bot != null ? bot.RouteLength : -1)} " +
+                      $"dist={(gm != null ? gm.DistanceMeters : 0f):F0} exit={code}");
+            foreach (var e in _errors) Debug.LogWarning("[ProtoSmokeTest] " + e);
+
+            EditorApplication.isPlaying = false;
+            EditorApplication.Exit(code);
         }
 
-        static void CaptureCameraToFile()
+        static void EnableBot()
+        {
+            var bot = Object.FindAnyObjectByType<JellyRush.Debugging.AutoPlayBot>();
+            if (bot == null) { _errors.Add("AutoPlayBot not found in scene"); return; }
+            bot.Active = true;
+        }
+
+        static void Capture()
         {
             var cam = Camera.main;
-            if (cam == null) { _errors.Add("Camera.main missing for capture"); return; }
-            int w = 810, h = 1440; // portrait 9:16
+            if (cam == null) return;
+            int w = 810, h = 1440;
             var rt = new RenderTexture(w, h, 24);
             var prev = cam.targetTexture;
             cam.targetTexture = rt;
@@ -152,14 +130,6 @@ namespace JellyRush.EditorTools
             System.IO.File.WriteAllBytes(_shotPath, tex.EncodeToPNG());
             cam.targetTexture = prev;
             RenderTexture.active = null;
-            Debug.Log("[ProtoSmokeTest] wrote " + _shotPath);
-        }
-
-        static void EnableAutoBot()
-        {
-            var bot = Object.FindAnyObjectByType<JellyRush.Debugging.AutoPlayBot>();
-            if (bot == null) { _errors.Add("AutoPlayBot not found in scene"); return; }
-            bot.Active = true;
         }
     }
 }
