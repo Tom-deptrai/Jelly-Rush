@@ -39,6 +39,11 @@ namespace JellyRush.Core
                  "the Jelly placeholder then rides on the prefab's JellySeat. Empty = box.")]
         [SerializeField] GameObject _carrierPrefab;
 
+        [Tooltip("Optional: the real Jelly prefab (JellyRoot > ModelRoot > Jelly_Model). " +
+                 "When assigned it replaces the Jelly_PLACEHOLDER cube on the Carrier's " +
+                 "JellySeat and is bound to PlayerVisuals for squash/stretch. Empty = cube.")]
+        [SerializeField] GameObject _jellyPrefab;
+
         /// <summary>Set by GameManager before a scene reload (RETRY / NEXT LEVEL) to
         /// pick which level the fresh scene should build. Consumed once in Awake.</summary>
         public static LevelData PendingLevel;
@@ -243,26 +248,50 @@ namespace JellyRush.Core
                 jellyAnchor.localPosition = new Vector3(0f, 0.5f, -0.1f);       // on top of the carrier
             }
 
-            var jelly = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            jelly.name = "Jelly_PLACEHOLDER";
-            jelly.transform.SetParent(jellyAnchor, false);
-            jelly.transform.localScale = new Vector3(0.9f, 0.85f, 0.85f);
-            jelly.transform.localPosition = new Vector3(0f, 0.425f, 0f);    // bottom sits on the carrier top
-            var jellyRenderer = jelly.GetComponent<Renderer>();
-            Tint(jelly, new Color(0.30f, 0.60f, 0.95f));
-            Object.Destroy(jelly.GetComponent<Collider>());
-
-            var face = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            face.name = "Face_PLACEHOLDER";
-            face.transform.SetParent(jelly.transform, false);
-            face.transform.localPosition = new Vector3(0f, 0.05f, -0.52f);  // toward camera
-            face.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            face.transform.localScale = new Vector3(0.7f, 0.5f, 1f);
-            Tint(face, new Color(0.96f, 0.98f, 1f));
-            Object.Destroy(face.GetComponent<Collider>());
-
+            // Jelly: real prefab when assigned, otherwise the frozen placeholder
+            // cube + face quad. The mount offset lives entirely in the Carrier's
+            // JellySeat - PlayerController holds no Jelly-vs-Carrier offset. The
+            // Jelly prefab stays a separate instance so a later victory sequence
+            // can detach it from JellySeat without a re-export.
             visuals = root.AddComponent<PlayerVisuals>();
-            visuals.Bind(leanPivot, jelly.transform, jellyRenderer);
+            if (_jellyPrefab != null)
+            {
+                var jellyRoot = Instantiate(_jellyPrefab, jellyAnchor);
+                jellyRoot.name = "JellyRoot";
+                jellyRoot.transform.localPosition = Vector3.zero;
+                jellyRoot.transform.localRotation = Quaternion.identity;
+                jellyRoot.transform.localScale = Vector3.one;
+
+                foreach (var col in jellyRoot.GetComponentsInChildren<Collider>(true))
+                    Object.Destroy(col);
+
+                // squash / stretch drives the model-correction node; no flat tint on
+                // the textured mesh (expression / colour is the real rig's job later).
+                var squashTarget = FindDeep(jellyRoot.transform, "ModelRoot") ?? jellyRoot.transform;
+                visuals.Bind(leanPivot, squashTarget, null);
+            }
+            else
+            {
+                var jelly = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                jelly.name = "Jelly_PLACEHOLDER";
+                jelly.transform.SetParent(jellyAnchor, false);
+                jelly.transform.localScale = new Vector3(0.9f, 0.85f, 0.85f);
+                jelly.transform.localPosition = new Vector3(0f, 0.425f, 0f);    // bottom sits on the carrier top
+                var jellyRenderer = jelly.GetComponent<Renderer>();
+                Tint(jelly, new Color(0.30f, 0.60f, 0.95f));
+                Object.Destroy(jelly.GetComponent<Collider>());
+
+                var face = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                face.name = "Face_PLACEHOLDER";
+                face.transform.SetParent(jelly.transform, false);
+                face.transform.localPosition = new Vector3(0f, 0.05f, -0.52f);  // toward camera
+                face.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                face.transform.localScale = new Vector3(0.7f, 0.5f, 1f);
+                Tint(face, new Color(0.96f, 0.98f, 1f));
+                Object.Destroy(face.GetComponent<Collider>());
+
+                visuals.Bind(leanPivot, jelly.transform, jellyRenderer);
+            }
 
             return controller;
         }

@@ -212,6 +212,7 @@ MonoBehaviour:
   _themeAsset: {fileID: 0}
   _levelAsset: {fileID: 0}
   _carrierPrefab: {fileID: 4994875507048284003, guid: dc40cc6ba6db84b43ba117b74a3d3117, type: 3}
+  _jellyPrefab: {fileID: 3546425853327379195, guid: 4fccca7cb375c41ef87bc57bf3dba20d, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
