@@ -34,6 +34,11 @@ namespace JellyRush.Core
                  "builds the prototype level at runtime.")]
         [SerializeField] LevelData _levelAsset;
 
+        [Tooltip("Optional: the real Carrier prefab (CarrierRoot > ModelRoot + JellySeat). " +
+                 "When assigned it replaces the Carrier_PLACEHOLDER box under LeanPivot; " +
+                 "the Jelly placeholder then rides on the prefab's JellySeat. Empty = box.")]
+        [SerializeField] GameObject _carrierPrefab;
+
         /// <summary>Set by GameManager before a scene reload (RETRY / NEXT LEVEL) to
         /// pick which level the fresh scene should build. Consumed once in Awake.</summary>
         public static LevelData PendingLevel;
@@ -199,17 +204,44 @@ namespace JellyRush.Core
             var leanPivot = new GameObject("LeanPivot").transform;
             leanPivot.SetParent(visual, false);
 
-            var carrier = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            carrier.name = "Carrier_PLACEHOLDER";
-            carrier.transform.SetParent(leanPivot, false);
-            carrier.transform.localScale = new Vector3(1.0f, 0.5f, 1.5f);   // long axis -> depth
-            carrier.transform.localPosition = new Vector3(0f, 0.25f, 0f);   // bottom exactly at foot (localY 0)
-            Tint(carrier, new Color(0.92f, 0.58f, 0.34f));
-            Object.Destroy(carrier.GetComponent<Collider>());
+            // Carrier: real prefab when assigned, otherwise the frozen placeholder box.
+            // Either way the gameplay root above is untouched - the art hangs off
+            // LeanPivot and obeys the foot point (ASSET_PIPELINE_V1 section 8).
+            Transform jellyAnchor;
+            if (_carrierPrefab != null)
+            {
+                var carrierRoot = Instantiate(_carrierPrefab, leanPivot);
+                carrierRoot.name = "CarrierRoot";
+                carrierRoot.transform.localPosition = Vector3.zero;
+                carrierRoot.transform.localRotation = Quaternion.identity;
+                carrierRoot.transform.localScale = Vector3.one;
 
-            var jellyAnchor = new GameObject("JellyAnchor").transform;
-            jellyAnchor.SetParent(leanPivot, false);
-            jellyAnchor.localPosition = new Vector3(0f, 0.5f, -0.1f);       // on top of the carrier
+                // The gameplay collider is the trigger sphere on PlayerUnit only -
+                // the art mesh must never take part in physics.
+                foreach (var col in carrierRoot.GetComponentsInChildren<Collider>(true))
+                    Object.Destroy(col);
+
+                var seat = FindDeep(carrierRoot.transform, "JellySeat");
+                jellyAnchor = new GameObject("JellyAnchor").transform;
+                jellyAnchor.SetParent(seat != null ? seat : leanPivot, false);
+                jellyAnchor.localPosition = seat != null
+                    ? Vector3.zero                                   // offset lives entirely in JellySeat
+                    : new Vector3(0f, 0.5f, -0.1f);
+            }
+            else
+            {
+                var carrier = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                carrier.name = "Carrier_PLACEHOLDER";
+                carrier.transform.SetParent(leanPivot, false);
+                carrier.transform.localScale = new Vector3(1.0f, 0.5f, 1.5f);   // long axis -> depth
+                carrier.transform.localPosition = new Vector3(0f, 0.25f, 0f);   // bottom exactly at foot (localY 0)
+                Tint(carrier, new Color(0.92f, 0.58f, 0.34f));
+                Object.Destroy(carrier.GetComponent<Collider>());
+
+                jellyAnchor = new GameObject("JellyAnchor").transform;
+                jellyAnchor.SetParent(leanPivot, false);
+                jellyAnchor.localPosition = new Vector3(0f, 0.5f, -0.1f);       // on top of the carrier
+            }
 
             var jelly = GameObject.CreatePrimitive(PrimitiveType.Cube);
             jelly.name = "Jelly_PLACEHOLDER";
@@ -233,6 +265,17 @@ namespace JellyRush.Core
             visuals.Bind(leanPivot, jelly.transform, jellyRenderer);
 
             return controller;
+        }
+
+        static Transform FindDeep(Transform root, string name)
+        {
+            if (root.name == name) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var found = FindDeep(root.GetChild(i), name);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         static void Tint(GameObject go, Color c)

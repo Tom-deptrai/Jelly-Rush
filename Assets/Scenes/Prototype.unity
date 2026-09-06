@@ -25,6 +25,7 @@ RenderSettings:
   m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
   m_AmbientIntensity: 1
   m_AmbientMode: 3
+  m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
   m_SkyboxMaterial: {fileID: 0}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
@@ -37,13 +38,12 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0, g: 0, b: 0, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
   m_ObjectHideFlags: 0
-  serializedVersion: 12
-  m_GIWorkflowMode: 1
+  serializedVersion: 13
+  m_BakeOnSceneLoad: 0
   m_GISettings:
     serializedVersion: 2
     m_BounceScale: 1
@@ -116,7 +116,6 @@ NavMeshSettings:
     buildHeightMesh: 0
     maxJobWorkers: 0
     preserveTilesOutsideBounds: 0
-    accuratePlacement: 0
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
@@ -162,5 +161,59 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b7bb0c39dc449f2f4cfad31c031ef109, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _config:
+    cameraFieldOfView: 58
+    cameraOffset: {x: 0, y: 3.8, z: -7.8}
+    cameraPitch: 16
+    cameraNear: 0.1
+    cameraFar: 400
+    cameraLateralFollow: 2.5
+    cameraLateralAmount: 0.25
+    cameraVerticalAmount: 0.35
+    cameraVerticalFollow: 2
+    laneSpacing: 2.15
+    playerZ: 0
+    startScrollSpeed: 9
+    maxScrollSpeed: 18
+    scrollAcceleration: 0.15
+    spawnAheadDistance: 62
+    despawnBehindDistance: 16
+    spawnIntervalMeters: 6.5
+    spawnIntervalJitter: 1.5
+    warmupSeconds: 2.5
+    jumpHeight: 1.5
+    jumpDuration: 0.5
+    bouncePadMultiplier: 2.2
+    airChainCeiling: 3.8
+    maxAirJumpBeats: 4
+    heightTiers:
+    - 0
+    - 1.6
+    - 3.2
+    playerFootClearance: 0.03
+    startHeight: 0
+    failDropBelowSupport: 5.5
+    failHeightAbsolute: -60
+    landSnap: 0.4
+    platformShortZ: 2.8
+    platformMediumZ: 5.5
+    platformLongZ: 10
+    startPlatformZ: 24
+    startingTheme: 0
+    laneChangeDuration: 0.16
+    laneLeanAngle: 18
+    swipeThresholdFraction: 0.06
+    maxGestureTime: 0.6
+    coinValue: 1
+    comboWindow: 1.4
+    enableDebugAutoTest: 1
+  _themeAsset: {fileID: 0}
+  _levelAsset: {fileID: 0}
+  _carrierPrefab: {fileID: 4994875507048284003, guid: dc40cc6ba6db84b43ba117b74a3d3117, type: 3}
+--- !u!1660057539 &9223372036854775807
+SceneRoots:
+  m_ObjectHideFlags: 0
+  m_Roots:
+  - {fileID: 1000000001}
