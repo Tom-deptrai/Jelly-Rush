@@ -104,3 +104,12 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Prototype smoke-test artifacts
+/prototype_playmode.png
+
+# macOS
+.DS_Store
+
+# macOS
+.DS_Store
