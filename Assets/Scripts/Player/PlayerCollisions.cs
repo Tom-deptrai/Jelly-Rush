@@ -1,6 +1,7 @@
 using JellyRush.Core;
 using JellyRush.Spawnables;
 using UnityEngine;
+using JellyRush.Feedback;
 
 namespace JellyRush.Player
 {
@@ -15,11 +16,13 @@ namespace JellyRush.Player
     {
         GameManager _game;
         PlayerController _controller;
+        GameplayFeedbackHub _feedback;
 
-        public void Configure(GameManager game, PlayerController controller)
+        public void Configure(GameManager game, PlayerController controller, GameplayFeedbackHub feedback)
         {
             _game = game;
             _controller = controller;
+            _feedback = feedback;
         }
 
         void OnTriggerEnter(Collider other)
@@ -32,6 +35,7 @@ namespace JellyRush.Player
             switch (tag.Kind)
             {
                 case SpawnableKind.Coin:
+                    _feedback?.Coin(other.ClosestPoint(transform.position));
                     _game.AddCoin();
                     tag.gameObject.SetActive(false);
                     break;
@@ -42,14 +46,30 @@ namespace JellyRush.Player
 
                 case SpawnableKind.Obstacle:
                 case SpawnableKind.RotatingBar:
-                    _game.Fail(tag.Kind.ToString());
+                    HandlePredictiveHazard(other, other.ClosestPoint(transform.position));
                     break;
 
                 case SpawnableKind.ClosingGate:
                     if (tag.TryGetComponent<ClosingGate>(out var gate) && gate.BlocksPlayerNow(_controller.CurrentLane))
-                        _game.Fail("ClosingGate");
+                        HandlePredictiveHazard(other, other.ClosestPoint(transform.position));
                     break;
             }
+        }
+
+        /// <summary>Shared by trigger callbacks and the pre-move sweep.</summary>
+        public void HandlePredictiveHazard(Collider other, Vector3 contactPoint)
+        {
+            if (_game == null || _game.State == GameState.Failed || _game.State == GameState.Completed) return;
+            var tag = other != null ? other.GetComponentInParent<SpawnableTag>() : null;
+            if (tag == null) return;
+            if (tag.Kind == SpawnableKind.ClosingGate &&
+                tag.TryGetComponent<ClosingGate>(out var gate) && !gate.BlocksPlayerNow(_controller.CurrentLane))
+                return;
+            if (tag.Kind != SpawnableKind.Obstacle && tag.Kind != SpawnableKind.RotatingBar &&
+                tag.Kind != SpawnableKind.ClosingGate) return;
+
+            _feedback?.Hit(contactPoint);
+            _game.Fail(tag.Kind.ToString());
         }
     }
 }

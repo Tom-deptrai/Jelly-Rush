@@ -20,6 +20,11 @@ namespace JellyRush.CameraRig
         float _currentX;
         float _currentY;
         float _baseY;
+        float _baseFov;
+        float _impulseTime;
+        float _impulseDuration;
+        float _impulseAmplitude;
+        float _impulseZoom;
 
         public void Configure(PrototypeConfig cfg, Transform playerTarget, Color skyColor)
         {
@@ -29,6 +34,7 @@ namespace JellyRush.CameraRig
 
             _cam.orthographic = false;
             _cam.fieldOfView = cfg.cameraFieldOfView;
+            _baseFov = cfg.cameraFieldOfView;
             _cam.nearClipPlane = cfg.cameraNear;
             _cam.farClipPlane = cfg.cameraFar;
             _cam.backgroundColor = skyColor;
@@ -54,10 +60,34 @@ namespace JellyRush.CameraRig
             float desiredY = _baseY + (_target.position.y - _cfg.startHeight) * _cfg.cameraVerticalAmount;
             _currentY = Mathf.Lerp(_currentY, desiredY, 1f - Mathf.Exp(-_cfg.cameraVerticalFollow * dt));
 
+            float shakeX = 0f, shakeY = 0f;
+            if (_impulseTime > 0f)
+            {
+                _impulseTime = Mathf.Max(0f, _impulseTime - Time.unscaledDeltaTime);
+                float decay = _impulseDuration > 0f ? _impulseTime / _impulseDuration : 0f;
+                float phase = Time.unscaledTime * 92f;
+                shakeX = Mathf.Sin(phase) * _impulseAmplitude * decay;
+                shakeY = Mathf.Cos(phase * 1.37f) * _impulseAmplitude * decay;
+                _cam.fieldOfView = _baseFov + _impulseZoom * decay;
+            }
+            else
+            {
+                _cam.fieldOfView = _baseFov;
+            }
+
             var p = transform.position;
-            p.x = _currentX;
-            p.y = _currentY;
+            p.x = _currentX + shakeX;
+            p.y = _currentY + shakeY;
             transform.position = p;
+        }
+
+        public void AddImpulse(float amplitude, float duration, float zoomDegrees)
+        {
+            if (amplitude < _impulseAmplitude && _impulseTime > 0f) return;
+            _impulseAmplitude = Mathf.Max(0f, amplitude);
+            _impulseDuration = Mathf.Max(0.01f, duration);
+            _impulseTime = _impulseDuration;
+            _impulseZoom = zoomDegrees;
         }
     }
 }

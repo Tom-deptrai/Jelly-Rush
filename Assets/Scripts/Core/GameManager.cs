@@ -2,6 +2,7 @@ using System;
 using JellyRush.Level;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using JellyRush.Feedback;
 
 namespace JellyRush.Core
 {
@@ -34,12 +35,14 @@ namespace JellyRush.Core
         public event Action OnLevelCompleted;
 
         float _comboTimer;
+        GameplayFeedbackHub _feedback;
 
-        public void Init(PrototypeConfig config)
+        public void Init(PrototypeConfig config, GameplayFeedbackHub feedback)
         {
             Instance = this;
             Config = config;
             State = GameState.Warmup;
+            _feedback = feedback;
         }
 
         public void SetLevel(LevelData level) => CurrentLevel = level;
@@ -87,12 +90,14 @@ namespace JellyRush.Core
             Combo = Mathf.Max(0, value);
             if (Combo > BestCombo) BestCombo = Combo;
             ComboChanged?.Invoke(Combo);
+            _feedback?.Combo(Combo);
         }
 
         public void Fail(string reason)
         {
             if (State == GameState.Failed || State == GameState.Completed) return;
             Debug.Log($"[JellyRush] Fail: {reason}");
+            _feedback?.Fail();
             SetCombo(0);
             SetState(GameState.Failed);
         }

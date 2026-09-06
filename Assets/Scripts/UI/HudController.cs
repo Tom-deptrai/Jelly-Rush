@@ -2,6 +2,7 @@ using JellyRush.Core;
 using JellyRush.Debugging;
 using UnityEngine;
 using UnityEngine.UI;
+using JellyRush.Feedback;
 
 namespace JellyRush.UI
 {
@@ -30,10 +31,14 @@ namespace JellyRush.UI
         Text _autoLabel;
 
         JellyRush.Player.PlayerController _player;
+        GameplayFeedbackHub _feedback;
+        Vector3 _comboBaseScale = Vector3.one;
+        float _comboPunch;
 
-        public void Build(GameManager game)
+        public void Build(GameManager game, GameplayFeedbackHub feedback)
         {
             _game = game;
+            _feedback = feedback;
             _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             var canvasGo = new GameObject("HUD Canvas",
@@ -67,6 +72,7 @@ namespace JellyRush.UI
             _game.ComboChanged += c => _combo.text = c >= 2 ? $"COMBO x{c}" : "";
             _game.DistanceChanged += d => _distance.text = $"{Mathf.FloorToInt(d)} m";
             _game.StateChanged += OnState;
+            _feedback.OnComboMilestone += OnComboMilestone;
         }
 
         public void BindPlayerDebug(JellyRush.Player.PlayerController player) => _player = player;
@@ -99,6 +105,19 @@ namespace JellyRush.UI
                 _debug.text = $"[{mode}] beats {_player.BeatsLeft}/4  " +
                               $"{(_player.IsAirborne ? "air" : "on platform")}  supY {_player.SupportY:0.0}";
             }
+
+            if (_combo != null)
+            {
+                _comboPunch = Mathf.Max(0f, _comboPunch - Time.unscaledDeltaTime * 5.5f);
+                _combo.rectTransform.localScale = _comboBaseScale * (1f + _comboPunch * 0.28f);
+            }
+        }
+
+        void OnComboMilestone(FeedbackSignal signal) => _comboPunch = 1f;
+
+        void OnDestroy()
+        {
+            if (_feedback != null) _feedback.OnComboMilestone -= OnComboMilestone;
         }
 
         void OnState(GameState s)

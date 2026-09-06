@@ -67,8 +67,9 @@ namespace JellyRush.Core
             if (GameLayers.PlayerLayer >= 0 && GameLayers.LandableLayer >= 0)
                 Physics.IgnoreLayerCollision(GameLayers.PlayerLayer, GameLayers.LandableLayer, true);
 
+            var feedback = new GameObject("GameplayFeedbackHub").AddComponent<JellyRush.Feedback.GameplayFeedbackHub>();
             var game = gameObject.AddComponent<GameManager>();
-            game.Init(_config);
+            game.Init(_config, feedback);
 
             // --- level (round 5): data drives the run ---------------------------
             var level = _levelAsset != null ? _levelAsset
@@ -110,8 +111,9 @@ namespace JellyRush.Core
             var input = new GameObject("Input").AddComponent<SwipeTapInput>();
             input.Configure(_config.swipeThresholdFraction, _config.maxGestureTime);
 
-            player.Configure(_config, lanes, game, input, visuals);
-            collisions.Configure(game, player);
+            player.Configure(_config, lanes, game, input, visuals, collisions, feedback);
+            collisions.Configure(game, player, feedback);
+            feedback.BindPlayer(player.transform);
 
             // --- camera -----------------------------------------------------
             var camGo = new GameObject("Main Camera", typeof(Camera));
@@ -119,6 +121,8 @@ namespace JellyRush.Core
             camGo.AddComponent<AudioListener>();
             var rig = camGo.AddComponent<DepthCameraRig>();
             rig.Configure(_config, player.transform, theme.skyColor);
+
+            BuildGameFeel(feedback, rig, visuals);
 
             BuildAtmosphere(theme);
 
@@ -135,7 +139,7 @@ namespace JellyRush.Core
             EnsureEventSystem();
             var hudGo = new GameObject("HUD");
             var hud = hudGo.AddComponent<HudController>();
-            hud.Build(game);
+            hud.Build(game, feedback);
             hud.BindPlayerDebug(player);
             hud.BindAutoTest(_config.enableDebugAutoTest, bot);
 
@@ -199,6 +203,17 @@ namespace JellyRush.Core
             trigger.isTrigger = true;
             trigger.radius = 0.45f;
             trigger.center = new Vector3(0f, 0.52f, 0f);
+
+            // Disabled geometry-only capsule used by PlayerController for casts and
+            // ComputePenetration. It never participates in PhysX callbacks, so coin /
+            // hazard trigger behaviour remains on the compact sphere above.
+            var envelope = root.AddComponent<CapsuleCollider>();
+            envelope.isTrigger = true;
+            envelope.radius = _config.collisionRadius;
+            envelope.height = Mathf.Max(_config.collisionHeight, _config.collisionRadius * 2f);
+            envelope.center = new Vector3(0f, _config.collisionCenterY, 0f);
+            envelope.direction = 1;
+            envelope.enabled = false;
 
             var controller = root.AddComponent<PlayerController>();
             collisions = root.AddComponent<PlayerCollisions>();
@@ -294,6 +309,17 @@ namespace JellyRush.Core
             }
 
             return controller;
+        }
+
+        void BuildGameFeel(JellyRush.Feedback.GameplayFeedbackHub feedback,
+                           DepthCameraRig cameraRig, PlayerVisuals visuals)
+        {
+            var root = new GameObject("GameFeelV1");
+            root.AddComponent<JellyRush.Feedback.SfxManager>().Configure(feedback);
+            root.AddComponent<JellyRush.Feedback.VfxManager>().Configure(feedback);
+            root.AddComponent<JellyRush.Feedback.CameraFeedback>().Configure(feedback, cameraRig);
+            root.AddComponent<JellyRush.Feedback.HapticService>().Configure(feedback);
+            root.AddComponent<JellyRush.Feedback.CharacterFeedback>().Configure(feedback, visuals);
         }
 
         static Transform FindDeep(Transform root, string name)

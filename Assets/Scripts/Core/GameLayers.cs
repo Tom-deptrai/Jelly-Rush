@@ -29,6 +29,17 @@ namespace JellyRush.Core
             }
         }
 
+        public static int HazardMask
+        {
+            get
+            {
+                int l = HazardLayer;
+                return l >= 0 ? 1 << l : ~0;
+            }
+        }
+
+        public static int SolidMask => LandableMask | HazardMask;
+
         public static void SetRecursively(GameObject go, int layer)
         {
             if (layer < 0 || go == null) return;

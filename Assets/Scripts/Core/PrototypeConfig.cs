@@ -99,6 +99,18 @@ namespace JellyRush.Core
                  "ALL player visuals must sit entirely at localY >= 0.")]
         public float playerFootClearance = 0.03f;
 
+        [Header("Player collision envelope (body/head; excludes antenna and decorative ears)")]
+        [Tooltip("Radius of the predictive vertical capsule used for solid motion queries.")]
+        public float collisionRadius = 0.42f;
+        [Tooltip("Height of the predictive capsule from feet through the main head/body.")]
+        public float collisionHeight = 1.65f;
+        [Tooltip("Capsule centre above PlayerUnit's foot-point root.")]
+        public float collisionCenterY = 0.84f;
+        [Tooltip("Small separation maintained from solid surfaces after a sweep.")]
+        public float collisionSkin = 0.025f;
+        [Tooltip("Small downward velocity after hitting a platform underside.")]
+        public float headHitDownVelocity = 0.6f;
+
         [Header("Platforms / fall (round 3 - no fixed ground)")]
         [Tooltip("Y of the starting platform (the Low tier).")]
         public float startHeight = 0f;

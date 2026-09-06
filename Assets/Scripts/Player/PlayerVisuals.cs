@@ -28,6 +28,8 @@ namespace JellyRush.Player
         float _lean;
         Color _baseColor = new Color(0.30f, 0.60f, 0.95f);
         float _excite;         // rises with rapid jumps, decays over time
+        float _hitFlash;
+        float _reactionLean;
 
         public void Bind(Transform leanPivot, Transform jelly, Renderer jellyRenderer)
         {
@@ -54,6 +56,33 @@ namespace JellyRush.Player
         {
             _excite = 1f;
             _squash = 1f;
+            _reactionLean = -5f;
+        }
+
+        public void OnHeadHit()
+        {
+            _squash = 0.85f;
+            _hitFlash = 0.7f;
+            _reactionLean = 4f;
+        }
+
+        public void OnHit()
+        {
+            _squash = 1f;
+            _hitFlash = 1f;
+            _reactionLean = -8f;
+        }
+
+        public void OnFail()
+        {
+            _hitFlash = 0.85f;
+            _reactionLean = 11f;
+        }
+
+        public void OnComboMilestone(int combo)
+        {
+            _excite = 1f;
+            _squash = Mathf.Clamp01(0.45f + combo * 0.025f);
         }
 
         public void OnLaneChange(int dir)
@@ -68,8 +97,10 @@ namespace JellyRush.Player
             float dt = Time.deltaTime;
             _excite = Mathf.Max(0f, _excite - dt * 0.5f);
             _squash = Mathf.Max(0f, _squash - dt * 3.5f);
+            _hitFlash = Mathf.Max(0f, _hitFlash - dt * 5f);
+            _reactionLean = Mathf.Lerp(_reactionLean, 0f, 1f - Mathf.Exp(-7f * dt));
 
-            _lean = Mathf.Lerp(_lean, _targetLean, 1f - Mathf.Exp(-12f * dt));
+            _lean = Mathf.Lerp(_lean, _targetLean + _reactionLean, 1f - Mathf.Exp(-12f * dt));
             if (_leanPivot != null)
                 _leanPivot.localRotation = Quaternion.Euler(0f, 0f, _lean);
 
@@ -83,7 +114,10 @@ namespace JellyRush.Player
             }
 
             if (_jellyRenderer != null)
-                _jellyRenderer.material.color = Color.Lerp(_baseColor, new Color(0.55f, 0.8f, 1f), _excite);
+            {
+                Color excited = Color.Lerp(_baseColor, new Color(0.55f, 0.8f, 1f), _excite);
+                _jellyRenderer.material.color = Color.Lerp(excited, new Color(1f, 0.38f, 0.3f), _hitFlash);
+            }
         }
     }
 }
