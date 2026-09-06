@@ -32,7 +32,7 @@ ModelImporter:
     extraUserProperties: []
     clipAnimations:
     - serializedVersion: 16
-      name: Jelly_Ride
+      name: Jelly_SourceRun
       takeName: Armature|Armature|running|baselayer
       internalID: -8892899532014023212
       firstFrame: 0

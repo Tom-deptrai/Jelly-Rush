@@ -26,7 +26,7 @@ namespace JellyRush.EditorTools
     /// Batch:
     ///   Unity -batchmode -projectPath . -quit \
     ///     -executeMethod JellyRush.EditorTools.CarrierIntegration.RunBatch \
-    ///     [-carrierYaw 180] [-carrierHeight 0.85]
+    ///     [-carrierYaw 180] [-carrierHeight 1.70]
     /// </summary>
     public static class CarrierIntegration
     {
@@ -51,7 +51,7 @@ namespace JellyRush.EditorTools
         const string ScenePath    = "Assets/Scenes/Prototype.unity";
 
         // Defaults - overridable from the command line for quick iteration.
-        static float _targetHeight = 0.85f;   // Carrier standing height, metres (spec: pair ~1.35)
+        static float _targetHeight = 1.70f;   // animated visual height; paired with 1.27m Jelly ~= 1.30:1
         static float _yaw          = 0f;      // ModelRoot yaw correction so Carrier faces +Z
 
         static readonly StringBuilder Report = new();
@@ -286,7 +286,6 @@ namespace JellyRush.EditorTools
             var modelRoot   = new GameObject("ModelRoot");
             var jellySeat   = new GameObject("JellySeat");
             modelRoot.transform.SetParent(carrierRoot.transform, false);
-            jellySeat.transform.SetParent(carrierRoot.transform, false);
             model.transform.SetParent(modelRoot.transform, false);
             model.transform.localPosition = Vector3.zero;
             model.transform.localRotation = Quaternion.identity;
@@ -335,12 +334,19 @@ namespace JellyRush.EditorTools
             maxL = rootInv.MultiplyPoint3x4(b.max);
             float topY = maxL.y, lenZ = maxL.z - minL.z;
 
-            // saddle: upper-back of the Carrier, slightly behind the shoulders
-            jellySeat.transform.localPosition = new Vector3(0f, topY * 0.86f, minL.z + lenZ * 0.42f);
-            jellySeat.transform.localRotation = Quaternion.identity;
+            // Hips is the centre-back/saddle bone in this quadruped rig. Keep the
+            // authored saddle point upright in the bind pose, then parent it while
+            // preserving world pose so walk translation/rotation drives the rider.
+            var saddleBone = FindDeep(model.transform, "Hips");
+            Require(saddleBone != null, "Carrier Hips saddle bone not found");
+            Vector3 saddleLocal = new Vector3(0f, topY * 0.78f, minL.z + lenZ * 0.43f);
+            jellySeat.transform.position = carrierRoot.transform.TransformPoint(saddleLocal);
+            jellySeat.transform.rotation = carrierRoot.transform.rotation;
+            jellySeat.transform.SetParent(saddleBone, true);
 
             Vector3 modelRootLocalPos = modelRoot.transform.localPosition;
-            Vector3 seatLocalPos = jellySeat.transform.localPosition;
+            Vector3 seatWorldInRoot = carrierRoot.transform.InverseTransformPoint(jellySeat.transform.position);
+            string saddleBoneName = saddleBone.name;
 
             var prefab = PrefabUtility.SaveAsPrefabAsset(carrierRoot, PrefabPath, out bool ok);
             UnityEngine.Object.DestroyImmediate(carrierRoot);
@@ -351,8 +357,19 @@ namespace JellyRush.EditorTools
             Report.AppendLine($"  ModelRoot local pos = {modelRootLocalPos} (sole aligned to localY 0, X/Z centred)");
             Report.AppendLine($"  ModelRoot local rot = (0, {_yaw}, 0)  -> Carrier faces +Z");
             Report.AppendLine($"  scaled bounds in CarrierRoot: y[0..{topY:F3}] zlen {lenZ:F3}");
-            Report.AppendLine($"  JellySeat local pos = {seatLocalPos} (upper back / saddle)");
+            Report.AppendLine($"  JellySeat follows bone '{saddleBoneName}' at CarrierRoot pos {seatWorldInRoot} (upper back / saddle)");
             return prefab;
+        }
+
+        static Transform FindDeep(Transform root, string name)
+        {
+            if (root.name == name) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var found = FindDeep(root.GetChild(i), name);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         static Bounds WorldBounds(GameObject go)
